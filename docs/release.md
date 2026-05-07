@@ -21,6 +21,8 @@ git push origin master
 git push origin v0.1.1
 ```
 
+If you are releasing the current stable line without bumping code version, tag the exact release commit as `v0.1.0` first and let the tag-triggered workflow publish from that ref.
+
 ## GitHub Actions
 
 - `CI`: tests, build, and docs build.

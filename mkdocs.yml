@@ -1,0 +1,9 @@
+site_name: chatclash 文档
+site_url: https://OWNER.github.io/REPO
+repo_url: https://github.com/OWNER/REPO
+theme:
+  name: material
+  language: zh
+nav:
+  - 首页: index.md
+  - English: index.en.md

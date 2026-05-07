@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "chatclash"
+dynamic = ["version"]
+description = "Chat Setup Clash"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["click>=8.0", "chatstyle>=0.1.0"]
+authors = [{name = "ChatArch", email = "1073853456@qq.com"}]
+keywords = ["chatclash", "cli"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+
+[project.scripts]
+chatclash = "chatclash.cli:main"
+
+[project.optional-dependencies]
+dev = ["build", "pytest"]
+docs = ["mkdocs>=1.4.0", "mkdocs-material>=9.0.0", "mike>=2.0.0"]
+
+[tool.setuptools.dynamic]
+version = {attr = "chatclash.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true

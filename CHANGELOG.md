@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.1
+## 0.1.0
 
 ### Added
 - `setup clash`, `status`, `proxy env`, `sub status`, `sub url`, and `sub generate`.

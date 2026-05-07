@@ -1,0 +1,4 @@
+interface:
+  display_name: "ChatClash Usage"
+  short_description: "Use ChatClash and set up proxy-friendly runtime."
+  default_prompt: "Use $chatclash-usage to show ChatClash quickstart, service startup, status checks, and Docker proxy setup."

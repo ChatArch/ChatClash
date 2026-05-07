@@ -23,9 +23,19 @@ ChatArch proxy toolkit for Clash, subconverter, and proxy service operations.
 
 ```bash
 pip install -e ".[dev]"
-chatclash hello ChatArch
+chatclash setup clash /tmp/clash --dry-run
+chatclash setup clash /tmp/clash -y
+chatclash status /tmp/clash
+chatclash proxy env
 python -m pytest -q
-python -m build
+```
+
+If you already have a subconverter service:
+
+```bash
+chatclash sub status
+chatclash sub url "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500
+chatclash sub generate "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500 -o /tmp/clash/config.yaml -y
 ```
 
 ## CLI Contract

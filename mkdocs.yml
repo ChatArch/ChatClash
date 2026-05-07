@@ -7,4 +7,5 @@ theme:
 nav:
   - 首页: index.md
   - CLI 设计: cli-design.md
+  - 发版: release.md
   - English: index.en.md

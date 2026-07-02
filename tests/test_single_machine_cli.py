@@ -408,7 +408,8 @@ def test_subscription_set_uses_chatstyle_interactive_flags_and_can_update_chaten
     assert "CHATCLASH_SOCKS_PORT='28091'" in env_text
     assert "CHATCLASH_CONTROLLER_PORT='29090'" in env_text
     assert "CHATCLASH_SUBSCRIPTION_FETCH_PROXY='local'" in env_text
-    assert "CHATCLASH_SUBSCRIPTION_URL" not in env_text
+    assert "secret-token" not in env_text
+    assert "CHATCLASH_SUBSCRIPTION_URL='https" not in env_text
 
 
 

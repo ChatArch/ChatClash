@@ -23,26 +23,27 @@ ChatArch proxy toolkit for Clash, subconverter, and proxy service operations.
 
 ```bash
 pip install -e ".[dev]"
-chatclash init --dry-run
-chatclash init -y
-chatclash engine install --dry-run
-chatclash config show
-chatclash config set --subscription-url <URL>
-chatclash update --dry-run
-chatclash up --dry-run
-chatclash verify --dry-run
-chatclash proxy env
-python -m pytest -q
+chatclash init
+chatclash subscription set -i
+chatclash mihomo install --daemon
+chatclash subscription update
+chatclash mihomo start
+chatclash status
+chatclash check proxy
+chatclash check ip
 ```
 
-订阅转换依赖外部 subconverter 服务：
+常用维护命令：
 
 ```bash
-chatenv use -t chatclash sub-main
-chatclash sub status
-chatclash sub url
-chatclash sub generate -o /tmp/clash/config.yaml --dry-run
-chatclash sub generate -o /tmp/clash/config.yaml -y
+chatclash subscription status
+chatclash subscription update
+chatclash mihomo update
+chatclash mihomo restart
+chatclash mihomo logs
+chatclash proxy show
+eval "$(chatclash proxy env)"
+python -m pytest -q
 ```
 
 ## CLI 规范

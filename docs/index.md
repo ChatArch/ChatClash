@@ -1,20 +1,33 @@
 # chatclash 文档
 
-`chatclash` 第一阶段提供 Clash/Yacd compose 目录生成、subconverter 订阅转换、状态摘要和 shell 代理环境变量输出。
+`chatclash` 是单机 Clash/Mihomo 管理工具：在哪台机器上运行，就管理这台机器上的代理服务。
+
+## 推荐主流程
+
+```bash
+chatclash init
+chatclash subscription set -i
+chatclash mihomo install --daemon
+chatclash subscription update
+chatclash mihomo start
+chatclash status
+chatclash check proxy
+chatclash check ip
+```
 
 ## 常用命令
 
 ```bash
-chatclash setup clash /tmp/clash -y
-chatclash status /tmp/clash
-chatclash proxy env
-
-chatclash sub status
-chatclash sub url
-chatclash sub generate -o /tmp/clash/config.yaml --dry-run
+chatclash status
+chatclash subscription status
+chatclash subscription update
+chatclash mihomo status
+chatclash mihomo logs
+chatclash proxy show
+eval "$(chatclash proxy env)"
 ```
 
-详细 CLI 设计见：[cli-design.md](cli-design.md)。
+详细 CLI 路线见：[cli-design.md](cli-design.md)。
 
 ## 本地预览
 

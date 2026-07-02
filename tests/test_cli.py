@@ -65,7 +65,7 @@ def test_status_prints_redacted_summary_not_raw_proxy_details(tmp_path):
     assert result.exit_code == 0
     assert "docker-compose.yaml: present" in result.output
     assert "proxies: 0" in result.output
-    assert "external-controller: :9090" in result.output
+    assert "external-controller: :7900" in result.output
     assert "password" not in result.output.lower()
 
 
@@ -74,7 +74,7 @@ def test_proxy_env_outputs_shell_exports():
 
     assert result.exit_code == 0
     assert "export http_proxy=http://127.0.0.1:7890" in result.output
-    assert "export all_proxy=http://127.0.0.1:7890" in result.output
+    assert "export all_proxy=socks5://127.0.0.1:7891" in result.output
     assert "export no_proxy=localhost,127.0.0.1,::1" in result.output
 
 
@@ -110,7 +110,8 @@ def test_sub_url_redacts_positional_subscription():
     assert "subscribe.example.test" not in result.output
 
 
-def test_sub_url_missing_values_fails_non_interactive(monkeypatch):
+def test_sub_url_missing_values_fails_non_interactive(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHATARCH_HOME", str(tmp_path / "chatarch-home"))
     monkeypatch.delenv("CHATCLASH_SUBSCRIPTION_URL", raising=False)
     monkeypatch.delenv("CHATCLASH_SUBCONVERTER_URL", raising=False)
 

@@ -1,344 +1,554 @@
-# ChatClash CLI Design
+# ChatClash 单机 CLI 路线
 
 ## 定位
 
-`chatclash` 当前阶段先做任务导向的单机闭环：
+`chatclash` 是单机 Clash/Mihomo 管理工具：在哪台机器上运行，就管理这台机器上的代理服务。
+
+它不做多机器 `remote` / `instance` 编排，也不自己发明一套 env/config 系统：
+
+- 跨机器、跨 profile 的敏感值走 ChatEnv。
+- 本机运行事实留在 `~/.chatarch/chatclash/`。
+- 运行的应用叫 `mihomo`，CLI 里不再叫抽象的 `engine`。
+- 启动、停止、自启动都属于 Mihomo 这个本机服务，不再单独暴露 `daemon` 组。
+
+## 最终 CLI 树
 
 ```text
-初始化 ~/.chatarch/chatclash
-  -> 下载/安装轻量 Mihomo 二进制
-  -> 配置订阅 URL、代理认证和端口
-  -> 刷新 Clash config.yaml
-  -> 启动本机代理服务
-  -> verify / ip-api 验收代理可用
+chatclash
+├── init
+│
+├── status
+│
+├── subscription
+│   ├── set
+│   ├── status
+│   └── update
+│
+├── mihomo
+│   ├── install
+│   ├── uninstall
+│   ├── update
+│   ├── start
+│   ├── stop
+│   ├── restart
+│   ├── status
+│   └── logs
+│
+├── check
+│   ├── proxy
+│   └── ip
+│
+└── proxy
+    ├── show
+    └── env
 ```
 
-不做多机器编排，不做 instance inventory，不把 Docker 作为当前方案候选。当前事实来源是：
+### 为什么不要单独的 `daemon`
+
+`daemon` 是实现方式，不是用户心智。用户实际关心的是：
 
 ```text
-~/.chatarch/chatclash/config.yaml
-~/.chatarch/chatclash/bin/mihomo
-~/.chatarch/chatclash/clash/config.yaml
+安装 Mihomo
+卸载 Mihomo
+更新 Mihomo 版本
+启动 Mihomo
+停止 Mihomo
+重启 Mihomo
+查看 Mihomo 状态/日志
+可选：安装时顺手注册为后台服务/自启动
 ```
 
-## ChatArch 规范
+所以这些命令应该都收进 `chatclash mihomo ...`。底层可以用 systemd user service、pid file 或别的 supervisor，但 CLI 不把这个细节暴露成一层主概念。
 
-后续实现必须遵循 ChatArch 项目规范：
+`--daemon` 只作为安装/卸载时的选项：
 
-- 项目结构沿用 `chattool pypi init -t chatarch` 生成模板。
-- CLI 入口保持 `chatclash = "chatclash.cli:main"`。
-- CLI 参数和交互使用 `chatstyle`：`CommandSchema`、`CommandField`、`add_interactive_option`、`resolve_command_inputs`。
-- `-i/-I`、`--dry-run`、`-y/--yes` 行为与现有 ChatArch CLI 保持一致。
-- `chatenv` 只保存需要跨设备复用的值。
-
-当前 chatenv 字段只需要两个：
-
-```text
-CHATCLASH_SUBSCRIPTION_URL
-CHATCLASH_SUBCONVERTER_URL
+```bash
+chatclash mihomo install --daemon
+chatclash mihomo uninstall --daemon
 ```
 
-说明：
+含义是“同时安装/移除后台服务和自启动”。它不是一个单独的顶层命令组。
 
-- `CHATCLASH_SUBSCRIPTION_URL`：订阅 URL，敏感，默认脱敏。
-- `CHATCLASH_SUBCONVERTER_URL`：subconverter 服务地址。它可能是远端服务地址，需要跨机器复用。
+## 一台机器上的完整路线
 
-不引入：
+### 0. 进入目标机器
 
-```text
-CHATCLASH_HOME
-CHATCLASH_RULE_CONFIG_URL
-CHATCLASH_HTTP_PORT
-CHATCLASH_SOCKS_PORT
-CHATCLASH_CONTROLLER_PORT
-CHATCLASH_YACD_PORT
-CHATCLASH_AUTH
+`chatclash` 不负责 SSH 编排。先用外部 SSH 进入那台机器，然后在本机执行：
+
+```bash
+ssh <host>
 ```
 
-这些都是 CLI 参数、默认值或当次生成配置，不进入 chatenv。
+后续所有命令都只作用于当前机器。
 
+### 1. 初始化本机目录
 
-## 单机维护命令（当前开发方向）
+```bash
+chatclash init
+```
 
-当前阶段 `ChatClash` 定位为单机 Clash 维护工具：在哪台机器上使用，就在那台机器本地运行 `chatclash`。SSH 只负责进入机器，`chatclash` 不做多机器编排或 instance inventory。默认 backend 是轻量二进制 Mihomo；当前方案不提供 Docker 候选。
-
-正式默认目录采用 Arch 系列位置：
+创建本机运行目录：
 
 ```text
 ~/.chatarch/chatclash/
+├── config.yaml
+├── bin/
+├── run/
+├── logs/
+├── cache/
+└── clash/
+    ├── config.yaml
+    ├── Country.mmdb
+    └── backups/
 ```
 
-测试和开发验证应放在 Playground/任务实验区或一次性临时目录；不要把测试安装、测试 Docker 服务或临时 Clash config 写入 `~/.chatarch` 或 `/srv/clash`。
-
-新增顶层命令：
+`config.yaml` 只保存本机非敏感运行事实，例如：
 
 ```text
-chatclash init
-chatclash engine install
-chatclash config show
-chatclash config set
-chatclash update
-chatclash up/down/restart/logs
-chatclash verify
-chatclash ip-api
+home
+clash_dir
+mihomo_path
+pid_file
+log_file
+http_port
+socks_port
+controller_port
 ```
 
+订阅 URL、代理认证不写进本地 config。
 
-### Engine backend
-
-默认：
-
-```text
-engine: binary
-engine_path: ~/.chatarch/chatclash/bin/mihomo
-```
-
-`chatclash engine install` 从 Mihomo release 下载当前平台单文件二进制到 `bin/mihomo`。这比 Docker 更适合 `~/.chatarch/chatclash/` 这种轻量正式目录。
-
-
-### `chatclash init`
-
-初始化当前机器的 ChatClash home、轻量二进制运行目录、placeholder Clash `config.yaml` 和本地配置文件。默认 home 为 `~/.chatarch/chatclash/`，测试可通过 `CHATCLASH_HOME` 或 `--home` 指向临时目录。
-
-### `chatclash config show/set`
-
-查看或设置订阅 URL、代理认证、subconverter URL 与端口。输出必须脱敏敏感值。
-
-### `chatclash update`
-
-从订阅 URL 刷新 Clash 配置：直接 Clash YAML 优先；如果返回内容不是 Clash YAML，则在配置了 subconverter URL 时通过 subconverter 生成。写入前备份旧 `config.yaml`，并保留本机 header（端口、认证、controller）。
-
-## 接口
-
-### 1. 配置 Clash
+### 2. 配置订阅
 
 ```bash
-chatclash setup clash [CLASH_DIR]
+chatclash subscription set
 ```
 
-用途：生成 Clash + Yacd 的 Docker Compose 目录。默认目录是 `/tmp/clash`，避免误改已有 `/srv/clash`。
+这个命令不建立新的 env 系统。它只是 ChatClash 面向用户的薄封装，实际写入 ChatEnv。
 
-参数：
+推荐交互式配置：
 
-| 参数 | 默认值 | 说明 |
+```bash
+chatclash subscription set -i
+```
+
+也可以用环境变量名传入，避免把敏感 URL 和密码写进 shell history：
+
+```bash
+export CLASH_SUB_URL='...'
+export CLASH_PROXY_AUTH='***'
+chatclash subscription set \
+  --url-env CLASH_SUB_URL \
+  --proxy-auth-env CLASH_PROXY_AUTH
+```
+
+ChatEnv 字段：
+
+| 字段 | 敏感 | 用途 |
 |---|---:|---|
-| `CLASH_DIR` | `/tmp/clash` | 目标目录 |
-| `--http-port` | `7890` | HTTP 代理端口 |
-| `--socks-port` | `7891` | SOCKS 代理端口 |
-| `--controller-port` | `7900` | 宿主机 controller 端口，映射容器 `9090` |
-| `--yacd-port` | `9135` | Yacd 端口 |
-| `--clash-image` | `dreamacro/clash` | Clash 镜像 |
-| `--yacd-image` | `haishanh/yacd:master` | Yacd 镜像 |
-| `--auth` | 空 | 可选代理认证，写入 config header 时脱敏展示 |
-| `--dry-run` | false | 展示计划，不写文件 |
-| `-y/--yes` | false | 写操作跳过确认 |
-| `-i/-I` | auto | chatstyle 交互开关 |
+| `CHATCLASH_SUBSCRIPTION_URL` | 是 | Clash/Mihomo 订阅 URL |
+| `CHATCLASH_PROXY_AUTH` | 是 | 本机代理认证，格式 `user:password` |
+| `CHATCLASH_SUBCONVERTER_URL` | 否 | subconverter 服务地址 |
 
-行为：
-
-- 创建 `CLASH_DIR/`、`CLASH_DIR/ui/`、`CLASH_DIR/backups/`。
-- 生成 `docker-compose.yaml`。
-- 如果没有 `config.yaml`，生成最小占位配置。
-- 不记录额外 `chatclash.toml`。
-- 对 `/srv/clash` 或覆盖已有文件必须确认。
-
-生成结构：
-
-```text
-CLASH_DIR/
-  docker-compose.yaml
-  config.yaml
-  ui/
-  backups/
-```
-
-### 2. 查看状态
+查看订阅状态：
 
 ```bash
-chatclash status [CLASH_DIR]
+chatclash subscription status
 ```
 
-用途：读取现有文件做摘要，不依赖额外配置文件。
+输出只显示是否已配置、最后更新时间、备份数量等摘要，不打印订阅 URL 和密码明文。
 
-行为：
-
-- 查看 `docker-compose.yaml`、`config.yaml`、`ui/`、`backups/` 是否存在。
-- 从 `docker-compose.yaml` 读取端口/镜像摘要。
-- 从 `config.yaml` 读取端口、controller、proxies/groups/rules 数量摘要。
-- 不输出节点密钥、server、UUID、订阅 URL、认证明文。
-
-### 3. 输出代理环境变量
+### 3. 安装 Mihomo
 
 ```bash
-chatclash proxy env [PROXY_URL]
+chatclash mihomo install
 ```
 
-用途：输出 shell 片段，不修改当前 shell。
+职责：
 
-默认：
+- 下载或安装 Mihomo 二进制。
+- 放到 `~/.chatarch/chatclash/bin/mihomo`。
+- 记录当前机器使用的二进制路径。
+
+如果希望安装时直接注册后台服务和自启动：
+
+```bash
+chatclash mihomo install --daemon
+```
+
+`--daemon` 的含义是：额外安装当前用户级别的 systemd service，并设置为开机或登录后自动启动。
+
+卸载：
+
+```bash
+chatclash mihomo uninstall
+```
+
+如果要同时移除后台服务和自启动：
+
+```bash
+chatclash mihomo uninstall --daemon
+```
+
+更新 Mihomo 版本：
+
+```bash
+chatclash mihomo update
+```
+
+这里的 `update` 只表示更新 Mihomo 二进制版本，不表示更新订阅；订阅更新永远是 `chatclash subscription update`。
+
+### 4. 拉取订阅并生成配置
+
+```bash
+chatclash subscription update
+```
+
+职责：
+
+- 从 ChatEnv 读取订阅 URL / 认证 / subconverter 地址。
+- 拉取订阅。
+- 生成 `~/.chatarch/chatclash/clash/config.yaml`。
+- 保留旧配置备份。
+- 做基本 YAML / Mihomo 配置校验。
+
+失败时不覆盖可用配置；成功后再启动或重启 Mihomo。
+
+### 5. 启动 Mihomo
+
+```bash
+chatclash mihomo start
+```
+
+常用运行命令：
+
+```bash
+chatclash mihomo status
+chatclash mihomo logs
+chatclash mihomo restart
+chatclash mihomo stop
+```
+
+如果订阅更新后要应用新配置：
+
+```bash
+chatclash subscription update
+chatclash mihomo restart
+```
+
+### 6. 自启动怎么处理
+
+不单独设计 `daemon install` / `daemon enable` 这层。自启动只是安装 Mihomo 时的一个选项：
+
+```bash
+chatclash mihomo install --daemon
+```
+
+如果一开始没有加，后面也可以重复执行同一个命令补装 service：
+
+```bash
+chatclash mihomo install --daemon
+```
+
+移除自启动：
+
+```bash
+chatclash mihomo uninstall --daemon
+```
+
+### 7. 查看总状态
+
+```bash
+chatclash status
+```
+
+这是总览命令，用来回答“这台机器现在配好了吗”：
 
 ```text
-PROXY_URL=http://127.0.0.1:7890
+ChatClash home:        ~/.chatarch/chatclash
+mihomo installed:      yes/no
+mihomo version:        x.y.z
+mihomo running:        yes/no
+mihomo autostart:      enabled/disabled
+subscription set:      yes/no
+proxy auth set:        yes/no
+config exists:         yes/no
+http proxy:            127.0.0.1:7890
+socks proxy:           127.0.0.1:7891
+last update:           timestamp / unknown
+backups:               count
 ```
 
-输出：
+所有敏感值只显示存在与否或脱敏摘要。
+
+### 8. 检查代理
+
+检查代理连通性：
+
+```bash
+chatclash check proxy
+```
+
+检查出口 IP：
+
+```bash
+chatclash check ip
+```
+
+`check` 是用户视角的检查命令，不叫 `verify`。
+
+### 9. 使用代理
+
+服务启动后，本机代理地址默认是：
+
+```text
+HTTP proxy:  http://127.0.0.1:7890
+SOCKS proxy: socks5://127.0.0.1:7891
+```
+
+查看可用代理地址：
+
+```bash
+chatclash proxy show
+```
+
+给当前 shell 输出代理环境变量：
+
+```bash
+chatclash proxy env
+```
+
+典型输出：
 
 ```bash
 export http_proxy=http://127.0.0.1:7890
 export https_proxy=http://127.0.0.1:7890
-export all_proxy=http://127.0.0.1:7890
+export all_proxy=socks5://127.0.0.1:7891
 export no_proxy=localhost,127.0.0.1,::1
 ```
 
-复杂容器代理配置不放入主 CLI，后续写 skill/文档。
-
-### 4. 订阅状态
+临时让当前 shell 走代理：
 
 ```bash
-chatclash sub status
+eval "$(chatclash proxy env)"
 ```
 
-用途：查看 chatenv/env 中的订阅和 subconverter 配置状态。
+浏览器或其他应用则直接配置：
 
-行为：
+```text
+HTTP:  127.0.0.1:7890
+SOCKS: 127.0.0.1:7891
+```
 
-- 读取 `CHATCLASH_SUBSCRIPTION_URL`，默认脱敏。
-- 读取 `CHATCLASH_SUBCONVERTER_URL`，如果未配置，提示可用 `-s/--subconverter-url` 临时传入。
-- 不请求网络，不写文件。
+## 串起来的一条主流程
 
-### 5. 构造 subconverter URL
+首次部署：
 
 ```bash
-chatclash sub url [SUBSCRIPTION_URL]
-chatclash sub url [SUBSCRIPTION_URL] -s http://127.0.0.1:25500
-chatclash sub url [SUBSCRIPTION_URL] -l <CONFIG_URL>
-chatclash sub url [SUBSCRIPTION_URL] --show
+chatclash init
+chatclash subscription set -i
+chatclash mihomo install
+chatclash subscription update
+chatclash mihomo start
+chatclash status
+chatclash check proxy
+chatclash check ip
 ```
 
-参数与 `reference/subconverter.md` 对齐：
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `SUBSCRIPTION_URL` | chatenv/env | 订阅 URL |
-| `-s/--subconverter-url` | chatenv/env | subconverter 服务地址 |
-| `-l/--config-url` | ACL4SSR Online | 规则配置 URL |
-| `--show` | false | 显示完整 URL |
-| `-i/-I` | auto | chatstyle 交互开关 |
-
-默认脱敏输出。`--show` 会暴露订阅 URL，必须提示风险。
-
-### 6. 生成 config.yaml
+以后更新订阅：
 
 ```bash
-chatclash sub generate [SUBSCRIPTION_URL]
-chatclash sub generate [SUBSCRIPTION_URL] -s http://127.0.0.1:25500
-chatclash sub generate [SUBSCRIPTION_URL] -l <CONFIG_URL>
-chatclash sub generate [SUBSCRIPTION_URL] -o /tmp/clash/config.yaml
-chatclash sub generate [SUBSCRIPTION_URL] --dry-run
-chatclash sub generate [SUBSCRIPTION_URL] -y
-chatclash sub generate [SUBSCRIPTION_URL] --debug
+chatclash subscription update
+chatclash mihomo restart
+chatclash status
+chatclash check proxy
 ```
 
-参数与 `reference/subconverter.md` 对齐：
-
-| 参数 | 默认值 | 说明 |
-|---|---|---|
-| `SUBSCRIPTION_URL` | chatenv/env | 订阅 URL |
-| `-s/--subconverter-url` | chatenv/env | subconverter 服务地址 |
-| `-l/--config-url` | ACL4SSR Online | 规则配置 URL |
-| `-o/--output` | `/tmp/clash/config.yaml` | 输出文件 |
-| `--debug` | false | 调试输出，仍需脱敏 |
-| `--dry-run` | false | 展示计划，不写文件 |
-| `-y/--yes` | false | 写入跳过确认 |
-| `-i/-I` | auto | chatstyle 交互开关 |
-
-实现流程：
-
-1. 解析订阅 URL：CLI 参数优先，其次 env/chatenv。
-2. 解析 subconverter URL：CLI `-s` 优先，其次 env/chatenv。
-3. 如果 subconverter URL 缺失，提示用户配置 `CHATCLASH_SUBCONVERTER_URL` 或传入 `-s`。第一阶段不自动安装/启动 subconverter。
-4. 按 blog 参数构造 `/sub?...` 请求。
-5. `--dry-run` 展示请求目标、输出路径、备份计划，不写文件。
-6. 非 dry-run 时请求 subconverter，得到 Clash YAML。
-7. 在返回 YAML 前追加本机 header。
-8. 校验 YAML。
-9. 展示 proxies/groups/rules 摘要。
-10. 写入前备份旧文件到 `output.parent/backups/`。
-11. 写入 `config.yaml`。
-
-默认 header：
-
-```yaml
-port: 7890
-socks-port: 7891
-allow-lan: true
-mode: Rule
-log-level: info
-external-controller: :9090
-```
-
-如果要改变 header 端口，后续可以给 `sub generate` 增加同名端口参数；第一版可以先使用默认 header，避免过度设计。
-
-### 7. SSR 预留
+临时使用代理：
 
 ```bash
-chatclash deploy ssr init
-chatclash deploy ssr status
-chatclash deploy ssr export
+eval "$(chatclash proxy env)"
+curl https://example.com
 ```
 
-第一阶段只保留边界，不实现实际 SSR 部署。
-
-## 推荐流程
-
-### 本地测试
+排障：
 
 ```bash
-chatclash setup clash /tmp/clash --dry-run
-chatclash setup clash /tmp/clash -y
-
-chatenv use -t chatclash sub-main
-chatclash sub status
-chatclash sub url
-chatclash sub generate -o /tmp/clash/config.yaml --dry-run
-chatclash sub generate -o /tmp/clash/config.yaml -y
-
-chatclash status /tmp/clash
-chatclash proxy env
+chatclash status
+chatclash mihomo status
+chatclash mihomo logs
+chatclash subscription status
+chatclash check proxy
+chatclash check ip
 ```
 
-### 临时传入 URL
+## 兼容别名策略
+
+旧命令可以保留为兼容别名，但文档主路径不推荐：
+
+```text
+chatclash update   -> chatclash subscription update
+chatclash up       -> chatclash mihomo start
+chatclash down     -> chatclash mihomo stop
+chatclash restart  -> chatclash mihomo restart
+chatclash logs     -> chatclash mihomo logs
+chatclash verify   -> chatclash check proxy
+chatclash ip-api   -> chatclash check ip
+```
+
+兼容别名可以存在一段时间，但新文档、新测试、新示例都应该使用主树命令。
+
+
+## 正式替换一台机器上的旧 Clash
+
+适用于“这台机器原来已经有 Clash/Mihomo，占用原端口和认证，现在要用 ChatClash 管起来”的场景。
+
+### 1. 先做只读巡检
 
 ```bash
-chatclash sub generate "$SUB_URL" -s http://127.0.0.1:25500 -o /tmp/clash/config.yaml --dry-run
-chatclash sub generate "$SUB_URL" -s http://127.0.0.1:25500 -o /tmp/clash/config.yaml -y
+chatclash status
+chatclash mihomo status
+ss -ltnp '( sport = :7890 or sport = :7891 or sport = :9090 )'
+docker ps --format '{{.Names}} {{.Status}} {{.Ports}}' | grep -Ei 'clash|yacd|mihomo' || true
 ```
 
-### 真实目录
+确认：
+
+- 原 HTTP 端口，例如 `7890`。
+- 原 SOCKS 端口，例如 `7891`。
+- 原 controller 端口，例如 `9090`。
+- 原代理认证是否存在；只看 `present`，不要打印密码。
+- 是否还有旧 Docker Clash/Yacd 容器。
+
+### 2. 备份当前正式配置
 
 ```bash
-chatclash setup clash /srv/clash --dry-run
-chatclash sub generate -o /srv/clash/config.yaml --dry-run
+cp ~/.chatarch/chatclash/config.yaml \
+  ~/.chatarch/chatclash/config.yaml.pre-migration.$(date +%Y%m%d-%H%M%S).bak
+cp ~/.chatarch/chatclash/clash/config.yaml \
+  ~/.chatarch/chatclash/clash/config.yaml.pre-migration.$(date +%Y%m%d-%H%M%S).bak
 ```
 
-真实目录写入必须确认，不能默认覆盖。
+备份文件可能包含节点和认证信息，不要贴到聊天或 PR 里。
 
-## 第一阶段实现要求
+### 3. 确保本机配置保留原端口
 
-只实现：
+ChatClash 本地 config 负责保存本机端口。正式替换时保持原端口不变，例如：
 
-- `setup clash`
-- `status`
-- `proxy env`
-- `sub status`
-- `sub url`
-- `sub generate`
+```text
+http_port: 7890
+socks_port: 7891
+controller_port: 9090
+```
 
-不实现：
+订阅 URL、代理认证仍然只放 ChatEnv。
 
-- `chatclash.toml`
-- controller/group/proxy/rules 管理
-- SSR 实际部署
-- 自动安装/启动 subconverter
-- 额外 `CHATCLASH_*` env 字段
+### 4. 安装 Mihomo 并接入自启动
 
+如果二进制已经存在，下面命令不会强制重新下载；它会补装 systemd user service 并 enable：
+
+```bash
+chatclash mihomo install --daemon
+```
+
+如果明确要更新 Mihomo 版本，再单独执行：
+
+```bash
+chatclash mihomo update
+```
+
+`update` 只更新 Mihomo 二进制版本，不更新订阅。
+
+### 5. 停旧服务，只保留 systemd 管理的一份 Mihomo
+
+先停旧 Docker Clash/Yacd，如果存在：
+
+```bash
+docker stop clash yacd
+```
+
+再停掉手动启动的 Mihomo，并清理残留 pid：
+
+```bash
+systemctl --user stop chatclash-mihomo.service || true
+pkill -f '^/home/.*/.chatarch/chatclash/bin/mihomo' || true
+rm -f ~/.chatarch/chatclash/run/mihomo.pid
+```
+
+确认端口已经释放：
+
+```bash
+ss -ltnp '( sport = :7890 or sport = :7891 or sport = :9090 )'
+```
+
+### 6. 启动新服务
+
+```bash
+chatclash mihomo start
+```
+
+如果已经安装了 `--daemon`，这个命令会走：
+
+```bash
+systemctl --user start chatclash-mihomo.service
+```
+
+### 7. 验证端口、认证和出口
+
+确认 systemd 接管成功：
+
+```bash
+systemctl --user is-enabled chatclash-mihomo.service
+systemctl --user is-active chatclash-mihomo.service
+systemctl --user show chatclash-mihomo.service -p MainPID -p ActiveState -p SubState
+```
+
+确认只剩一份 Mihomo：
+
+```bash
+pgrep -af '^/home/.*/.chatarch/chatclash/bin/mihomo'
+```
+
+确认端口：
+
+```bash
+ss -ltnp '( sport = :7890 or sport = :7891 or sport = :9090 )'
+```
+
+确认未带认证会被拒绝：
+
+```bash
+curl -sS -m 10 --proxy http://127.0.0.1:7890 -I http://example.com
+# 期望看到：HTTP/1.1 407 Proxy Authentication Required
+```
+
+确认带 ChatEnv 里的账号密码可以通过：
+
+```bash
+chatclash check proxy --min-success 4 --timeout 30
+chatclash check ip --timeout 30
+```
+
+`check proxy` 输出里的代理地址必须脱敏，例如：
+
+```text
+proxy: http://***@127.0.0.1:7890
+success_count=4
+```
+
+### 8. 订阅刷新注意事项
+
+刷新订阅使用：
+
+```bash
+chatclash subscription update
+```
+
+如果订阅源返回 token 过期或 403，ChatClash 不应该覆盖现有可用配置；应保留当前 `clash/config.yaml`，等订阅 URL 更新后再执行 `subscription update`。
+
+远程 subconverter 应写入 ChatEnv：
+
+```bash
+chatclash subscription set --subconverter-url <SUBCONVERTER_BASE_URL>
+```
+
+如果 subconverter 只绑定在远程机器 `127.0.0.1:25500`，当前机器不能直接访问，需要先把服务改成可访问地址，或通过 SSH tunnel 暴露成本机 URL，再写入 `CHATCLASH_SUBCONVERTER_URL`。

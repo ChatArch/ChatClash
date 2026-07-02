@@ -15,6 +15,11 @@ class ChatClashConfig(BaseEnvConfig):
         desc="Subscription URL used by subconverter.",
         is_sensitive=True,
     )
+    CHATCLASH_PROXY_AUTH = EnvField(
+        "CHATCLASH_PROXY_AUTH",
+        desc="Proxy authentication in user:password format.",
+        is_sensitive=True,
+    )
     CHATCLASH_SUBCONVERTER_URL = EnvField(
         "CHATCLASH_SUBCONVERTER_URL",
         desc="subconverter service base URL.",

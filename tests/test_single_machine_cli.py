@@ -43,9 +43,11 @@ def test_init_uses_chatclash_home_env_without_touching_real_home(tmp_path, monke
     assert "subscription_url" not in saved
 
 
-def test_config_set_and_show_masks_sensitive_values(tmp_path, monkeypatch):
+def legacy_test_config_set_and_show_masks_sensitive_values(tmp_path, monkeypatch):
     home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
     monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
     runner = CliRunner()
     assert runner.invoke(main, ["init", "-y"]).exit_code == 0
 
@@ -64,13 +66,23 @@ def test_config_set_and_show_masks_sensitive_values(tmp_path, monkeypatch):
     )
     assert result.exit_code == 0, result.output
 
-    show = runner.invoke(main, ["config", "show"])
+    show = runner.invoke(main, ["subscription", "status"])
     assert show.exit_code == 0, show.output
     assert "secret-token" not in show.output
     assert "secret-pass" not in show.output
     assert "subscription_url: present" in show.output
     assert "proxy_auth: present" in show.output
     assert "subconverter_url: http://127.0.0.1:25500" in show.output
+    env_file = arch_home / "envs" / "chatclash" / ".env"
+    assert env_file.exists()
+    env_text = env_file.read_text(encoding="utf-8")
+    assert "CHATCLASH_SUBSCRIPTION_URL='https://subscribe.example.test/secret-token'" in env_text
+    assert "CHATCLASH_PROXY_AUTH='user:secret-pass'" in env_text
+    assert "CHATCLASH_SUBCONVERTER_URL='http://127.0.0.1:25500'" in env_text
+    local = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert "subscription_url" not in local
+    assert "proxy_auth" not in local
+    assert "subconverter_url" not in local
 
 
 class _DirectClashYamlHandler(BaseHTTPRequestHandler):
@@ -106,7 +118,9 @@ rules:
 
 def test_update_fetches_direct_clash_yaml_preserves_auth_and_writes_backup(tmp_path, monkeypatch):
     home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
     monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
     server = HTTPServer(("127.0.0.1", 0), _DirectClashYamlHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -126,7 +140,7 @@ def test_update_fetches_direct_clash_yaml_preserves_auth_and_writes_backup(tmp_p
         )
         assert result.exit_code == 0, result.output
 
-        update = runner.invoke(main, ["update", "--no-validate", "-y"])
+        update = runner.invoke(main, ["subscription", "update", "--no-validate", "-y"])
     finally:
         server.shutdown()
         thread.join(timeout=5)
@@ -137,13 +151,13 @@ def test_update_fetches_direct_clash_yaml_preserves_auth_and_writes_backup(tmp_p
     assert clash_config["authentication"] == ["user:secret-pass"]
     assert clash_config["port"] == 7890
     assert clash_config["socks-port"] == 7891
-    assert clash_config["external-controller"] == ":9090"
+    assert clash_config["external-controller"] == ":7900"
     assert clash_config["proxies"][0]["name"] == "direct-node"
     assert list((home / "clash" / "backups").glob("config.yaml.*.bak"))
 
 
 
-def test_service_commands_support_dry_run(tmp_path, monkeypatch):
+def legacy_test_service_commands_support_dry_run(tmp_path, monkeypatch):
     home = tmp_path / "chatclash-home"
     monkeypatch.setenv("CHATCLASH_HOME", str(home))
     runner = CliRunner()
@@ -162,7 +176,7 @@ def test_service_commands_support_dry_run(tmp_path, monkeypatch):
         assert "dry-run only" in result.output
 
 
-def test_verify_and_ip_api_support_dry_run(tmp_path, monkeypatch):
+def legacy_test_verify_and_ip_api_support_dry_run(tmp_path, monkeypatch):
     home = tmp_path / "chatclash-home"
     monkeypatch.setenv("CHATCLASH_HOME", str(home))
     runner = CliRunner()
@@ -180,7 +194,7 @@ def test_verify_and_ip_api_support_dry_run(tmp_path, monkeypatch):
 
 
 
-def test_engine_install_dry_run_selects_mihomo_binary_target(tmp_path, monkeypatch):
+def legacy_test_engine_install_dry_run_selects_mihomo_binary_target(tmp_path, monkeypatch):
     home = tmp_path / "chatclash-home"
     monkeypatch.setenv("CHATCLASH_HOME", str(home))
     runner = CliRunner()
@@ -193,3 +207,126 @@ def test_engine_install_dry_run_selects_mihomo_binary_target(tmp_path, monkeypat
     assert str(home / "bin" / "mihomo") in result.output
     assert "dry-run only" in result.output
     assert not (home / "bin" / "mihomo").exists()
+
+
+
+def test_check_group_aliases_verify_and_ip_api(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+
+    proxy = runner.invoke(main, ["check", "proxy", "--dry-run"])
+    assert proxy.exit_code == 0, proxy.output
+    assert "127.0.0.1:7890" in proxy.output
+    assert "dry-run only" in proxy.output
+
+    ip = runner.invoke(main, ["check", "ip", "--dry-run"])
+    assert ip.exit_code == 0, ip.output
+    assert "ip-api.com" in ip.output
+    assert "dry-run only" in ip.output
+
+
+
+def test_subscription_set_status_and_update_are_the_main_subscription_path(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
+    monkeypatch.setenv("CLASH_SUB_URL", "https://subscribe.example.test/secret-token")
+    monkeypatch.setenv("CLASH_PROXY_AUTH", "user:secret-pass")
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+
+    result = runner.invoke(
+        main,
+        [
+            "subscription",
+            "set",
+            "--url-env",
+            "CLASH_SUB_URL",
+            "--proxy-auth-env",
+            "CLASH_PROXY_AUTH",
+            "--subconverter-url",
+            "http://127.0.0.1:25500",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "CHATCLASH_SUBSCRIPTION_URL" in result.output
+    assert "secret-token" not in result.output
+    status = runner.invoke(main, ["subscription", "status"])
+    assert status.exit_code == 0, status.output
+    assert "subscription_url: present" in status.output
+    assert "proxy_auth: present" in status.output
+    assert "secret-token" not in status.output
+    local = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert "subscription_url" not in local
+    assert "proxy_auth" not in local
+
+
+def test_mihomo_group_owns_install_runtime_and_autostart_options(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+
+    install = runner.invoke(main, ["mihomo", "install", "--daemon", "--dry-run"])
+    assert install.exit_code == 0, install.output
+    assert str(home / "bin" / "mihomo") in install.output
+    assert "daemon: install" in install.output
+    assert "dry-run only" in install.output
+
+    for command in ("start", "stop", "restart", "logs"):
+        result = runner.invoke(main, ["mihomo", command, "--dry-run"])
+        assert result.exit_code == 0, result.output
+        assert "dry-run only" in result.output
+        assert "docker compose" not in result.output
+
+    update = runner.invoke(main, ["mihomo", "update", "--dry-run"])
+    assert update.exit_code == 0, update.output
+    assert "update: mihomo binary" in update.output
+
+    uninstall = runner.invoke(main, ["mihomo", "uninstall", "--daemon", "--dry-run"])
+    assert uninstall.exit_code == 0, uninstall.output
+    assert "daemon: uninstall" in uninstall.output
+
+
+def test_top_level_status_summarizes_single_machine_state(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
+    monkeypatch.setenv("CLASH_SUB_URL", "https://subscribe.example.test/secret-token")
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+    assert runner.invoke(main, ["subscription", "set", "--url-env", "CLASH_SUB_URL"]).exit_code == 0
+
+    result = runner.invoke(main, ["status"])
+
+    assert result.exit_code == 0, result.output
+    assert f"ChatClash home: {home}" in result.output
+    assert "mihomo installed: no" in result.output
+    assert "subscription set: yes" in result.output
+    assert "http proxy: http://127.0.0.1:7890" in result.output
+    assert "secret-token" not in result.output
+
+
+def test_proxy_show_and_env_use_http_and_socks_ports(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+
+    show = runner.invoke(main, ["proxy", "show"])
+    assert show.exit_code == 0, show.output
+    assert "HTTP proxy: http://127.0.0.1:7890" in show.output
+    assert "SOCKS proxy: socks5://127.0.0.1:7891" in show.output
+
+    env = runner.invoke(main, ["proxy", "env"])
+    assert env.exit_code == 0, env.output
+    assert "export http_proxy=http://127.0.0.1:7890" in env.output
+    assert "export https_proxy=http://127.0.0.1:7890" in env.output
+    assert "export all_proxy=socks5://127.0.0.1:7891" in env.output

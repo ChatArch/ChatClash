@@ -15,6 +15,7 @@ import click
 import yaml
 from chatenv import BaseEnvConfig, EnvStore, get_paths
 from chatstyle import (
+    ask_confirm,
     CommandField,
     CommandSchema,
     add_interactive_option,
@@ -23,13 +24,14 @@ from chatstyle import (
     resolve_command_inputs,
 )
 
+from . import __version__
 from .config import ChatClashConfig
 
 
 DEFAULT_CLASH_DIR = Path("/tmp/clash")
 DEFAULT_HTTP_PORT = 7890
 DEFAULT_SOCKS_PORT = 7891
-DEFAULT_CONTROLLER_PORT = 7900
+DEFAULT_CONTROLLER_PORT = 9090
 DEFAULT_YACD_PORT = 9135
 DEFAULT_CLASH_IMAGE = "dreamacro/clash"
 DEFAULT_YACD_IMAGE = "haishanh/yacd:master"
@@ -56,12 +58,6 @@ def _default_local_config(*, home: Path | None = None) -> dict[str, Any]:
     return {
         "home": str(root),
         "clash_dir": str(clash_dir),
-        "http_port": DEFAULT_HTTP_PORT,
-        "socks_port": DEFAULT_SOCKS_PORT,
-        "controller_port": DEFAULT_CONTROLLER_PORT,
-        "yacd_port": DEFAULT_YACD_PORT,
-        "clash_image": DEFAULT_CLASH_IMAGE,
-        "yacd_image": DEFAULT_YACD_IMAGE,
         "fetch_mode": "direct-clash-yaml",
         "engine": "binary",
         "engine_path": str(root / "bin" / "mihomo"),
@@ -111,28 +107,62 @@ def _load_chatenv() -> None:
     BaseEnvConfig.load_all(get_paths().envs_dir)
 
 
-def _subscription_url() -> str | None:
+def _chatenv_value(env_key: str, field: Any) -> str:
     _load_chatenv()
-    return os.getenv("CHATCLASH_SUBSCRIPTION_URL") or str(
-        ChatClashConfig.CHATCLASH_SUBSCRIPTION_URL.value or ""
-    )
+    return os.getenv(env_key) or str(field.value or "")
+
+
+def _subscription_url() -> str | None:
+    return _chatenv_value("CHATCLASH_SUBSCRIPTION_URL", ChatClashConfig.CHATCLASH_SUBSCRIPTION_URL)
 
 
 def _subconverter_url() -> str | None:
-    _load_chatenv()
-    return os.getenv("CHATCLASH_SUBCONVERTER_URL") or str(
-        ChatClashConfig.CHATCLASH_SUBCONVERTER_URL.value or ""
-    )
+    return _chatenv_value("CHATCLASH_SUBCONVERTER_URL", ChatClashConfig.CHATCLASH_SUBCONVERTER_URL)
+
+
+def _subscription_fetch_proxy() -> str | None:
+    return _chatenv_value("CHATCLASH_SUBSCRIPTION_FETCH_PROXY", ChatClashConfig.CHATCLASH_SUBSCRIPTION_FETCH_PROXY)
 
 
 def _proxy_auth() -> str | None:
-    _load_chatenv()
-    return os.getenv("CHATCLASH_PROXY_AUTH") or str(
-        ChatClashConfig.CHATCLASH_PROXY_AUTH.value or ""
-    )
+    return _chatenv_value("CHATCLASH_PROXY_AUTH", ChatClashConfig.CHATCLASH_PROXY_AUTH)
 
 
-def _write_chatclash_env(*, subscription_url: str | None = None, proxy_auth: str | None = None, subconverter_url: str | None = None) -> list[str]:
+def _chatenv_int(env_key: str, field: Any, fallback: int) -> int:
+    value = _clean(_chatenv_value(env_key, field))
+    if value is None:
+        return fallback
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise click.ClickException(f"{env_key} must be an integer") from exc
+
+
+def _http_port(config: dict[str, Any]) -> int:
+    fallback = int(config.get("http_port") or DEFAULT_HTTP_PORT)
+    return _chatenv_int("CHATCLASH_HTTP_PORT", ChatClashConfig.CHATCLASH_HTTP_PORT, fallback)
+
+
+def _socks_port(config: dict[str, Any]) -> int:
+    fallback = int(config.get("socks_port") or DEFAULT_SOCKS_PORT)
+    return _chatenv_int("CHATCLASH_SOCKS_PORT", ChatClashConfig.CHATCLASH_SOCKS_PORT, fallback)
+
+
+def _controller_port(config: dict[str, Any]) -> int:
+    fallback = int(config.get("controller_port") or DEFAULT_CONTROLLER_PORT)
+    return _chatenv_int("CHATCLASH_CONTROLLER_PORT", ChatClashConfig.CHATCLASH_CONTROLLER_PORT, fallback)
+
+
+def _write_chatclash_env(
+    *,
+    subscription_url: str | None = None,
+    proxy_auth: str | None = None,
+    subconverter_url: str | None = None,
+    http_port: int | str | None = None,
+    socks_port: int | str | None = None,
+    controller_port: int | str | None = None,
+    subscription_fetch_proxy: str | None = None,
+) -> list[str]:
     """Persist ChatClash variables through ChatEnv's explicit store API."""
 
     paths = get_paths()
@@ -148,6 +178,18 @@ def _write_chatclash_env(*, subscription_url: str | None = None, proxy_auth: str
     if subconverter_url is not None:
         values["CHATCLASH_SUBCONVERTER_URL"] = subconverter_url
         changed.append("CHATCLASH_SUBCONVERTER_URL")
+    if http_port is not None:
+        values["CHATCLASH_HTTP_PORT"] = str(http_port)
+        changed.append("CHATCLASH_HTTP_PORT")
+    if socks_port is not None:
+        values["CHATCLASH_SOCKS_PORT"] = str(socks_port)
+        changed.append("CHATCLASH_SOCKS_PORT")
+    if controller_port is not None:
+        values["CHATCLASH_CONTROLLER_PORT"] = str(controller_port)
+        changed.append("CHATCLASH_CONTROLLER_PORT")
+    if subscription_fetch_proxy is not None:
+        values["CHATCLASH_SUBSCRIPTION_FETCH_PROXY"] = subscription_fetch_proxy
+        changed.append("CHATCLASH_SUBSCRIPTION_FETCH_PROXY")
     if changed:
         store.save_active(ChatClashConfig, values)
         _load_chatenv()
@@ -169,13 +211,18 @@ def _mask(value: str | None) -> str:
         return "***"
     parsed = urllib.parse.urlsplit(value)
     if parsed.scheme and parsed.netloc:
-        host = parsed.netloc
-        return f"{parsed.scheme}://{host}/...{value[-6:]}"
+        host = parsed.hostname or parsed.netloc
+        if parsed.port:
+            host = f"{host}:{parsed.port}"
+        if parsed.username or parsed.password:
+            return f"{parsed.scheme}://***@{host}"
+        suffix = value[-6:] if parsed.path or parsed.query else ""
+        return f"{parsed.scheme}://{host}/...{suffix}" if suffix else f"{parsed.scheme}://{host}"
     return f"{value[:4]}...{value[-4:]}"
 
 
 def _redact_text(text: str, *extra_secrets: str | None) -> str:
-    for value in (_subscription_url(), _proxy_auth(), *extra_secrets):
+    for value in (_subscription_url(), _proxy_auth(), _subscription_fetch_proxy(), *extra_secrets):
         value = _clean(value)
         if value:
             text = text.replace(value, _mask(value))
@@ -285,7 +332,7 @@ def _sensitive_path(path: Path) -> bool:
 def _confirm_write(path: Path, *, yes: bool, reason: str) -> None:
     if yes:
         return
-    if not click.confirm(f"{reason}. Continue?", default=False):
+    if not ask_confirm(reason, default=False):
         raise click.Abort()
 
 
@@ -324,20 +371,36 @@ def _build_subconverter_url(
     return f"{base}/sub?{query}"
 
 
-def _fetch_url(url: str) -> str:
+
+def _resolve_fetch_proxy(config: dict[str, Any]) -> str | None:
+    value = _clean(_subscription_fetch_proxy())
+    if not value:
+        return None
+    if value.lower() in {"1", "true", "yes", "local", "self", "proxy"}:
+        return _local_proxy_url(config)
+    return value
+
+
+def _fetch_url(url: str, *, proxy_url: str | None = None) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": "chatclash/0.1"})
+    opener = None
+    if proxy_url:
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+        )
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        open_func = opener.open if opener is not None else urllib.request.urlopen
+        with open_func(request, timeout=60) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             return response.read().decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")[:500]
         raise click.ClickException(
-            _redact_text(f"subconverter request failed: HTTP {exc.code}: {body}")
+            _redact_text(f"request failed: HTTP {exc.code}: {body}", proxy_url)
         ) from exc
     except urllib.error.URLError as exc:
         raise click.ClickException(
-            _redact_text(f"subconverter request failed: {exc.reason}")
+            _redact_text(f"request failed: {exc.reason}", proxy_url)
         ) from exc
 
 
@@ -351,6 +414,20 @@ def _merge_header(converted_yaml: str) -> tuple[str, dict[str, Any]]:
     if not isinstance(parsed, dict):
         raise click.ClickException("subconverter returned invalid Clash config YAML")
     return content, parsed
+
+
+CHATCLASH_SET_SCHEMA = CommandSchema(
+    name="chatclash-set",
+    fields=(
+        CommandField("subscription_url", "Subscription URL", sensitive=True),
+        CommandField("proxy_auth", "Proxy authentication user:password", sensitive=True),
+        CommandField("subconverter_url", "Subconverter base URL"),
+        CommandField("http_port", "HTTP proxy port", kind="int"),
+        CommandField("socks_port", "SOCKS proxy port", kind="int"),
+        CommandField("controller_port", "Mihomo controller port", kind="int"),
+        CommandField("subscription_fetch_proxy", "Proxy for fetching subscription; use local for ChatClash proxy"),
+    ),
+)
 
 
 SUB_INPUT_SCHEMA = CommandSchema(
@@ -397,14 +474,14 @@ def _docker_compose_command(clash_dir: Path, *args: str) -> list[str]:
 
 def _local_proxy_url(config: dict[str, Any]) -> str:
     auth = _proxy_auth()
-    port = int(config.get("http_port") or DEFAULT_HTTP_PORT)
+    port = _http_port(config)
     if auth:
         return f"http://{auth}@127.0.0.1:{port}"
     return f"http://127.0.0.1:{port}"
 
 
 def _masked_proxy_url(config: dict[str, Any]) -> str:
-    port = int(config.get("http_port") or DEFAULT_HTTP_PORT)
+    port = _http_port(config)
     if _clean(_proxy_auth()):
         return f"http://***@127.0.0.1:{port}"
     return f"http://127.0.0.1:{port}"
@@ -432,11 +509,11 @@ def _log_file(config: dict[str, Any]) -> Path:
 
 
 def _http_proxy_url(config: dict[str, Any], *, host: str = "127.0.0.1") -> str:
-    return f"http://{host}:{int(config.get('http_port') or DEFAULT_HTTP_PORT)}"
+    return f"http://{host}:{_http_port(config)}"
 
 
 def _socks_proxy_url(config: dict[str, Any], *, host: str = "127.0.0.1") -> str:
-    return f"socks5://{host}:{int(config.get('socks_port') or DEFAULT_SOCKS_PORT)}"
+    return f"socks5://{host}:{_socks_port(config)}"
 
 
 def _daemon_unit_path() -> Path:
@@ -531,6 +608,7 @@ def _show_single_machine_status() -> None:
 
 
 @click.group()
+@click.version_option(__version__)
 def main() -> None:
     """ChatArch CLI for Clash, subconverter, and proxy operations."""
 
@@ -583,16 +661,15 @@ def init_command(
             _placeholder_config(http_port=http_port, socks_port=socks_port, auth=None),
             encoding="utf-8",
         )
+    _write_chatclash_env(
+        http_port=http_port,
+        socks_port=socks_port,
+        controller_port=controller_port,
+    )
     _write_local_config(
         {
             "home": str(root),
             "clash_dir": str(target),
-            "http_port": http_port,
-            "socks_port": socks_port,
-            "controller_port": controller_port,
-            "yacd_port": yacd_port,
-            "clash_image": clash_image,
-            "yacd_image": yacd_image,
             "fetch_mode": "direct-clash-yaml",
             "engine": "binary",
             "engine_path": str(root / "bin" / "mihomo"),
@@ -616,7 +693,11 @@ def subscription_group() -> None:
 @click.option("--subscription-url", default=None, help="Subscription URL. Prefer --url-env to avoid shell history leaks.")
 @click.option("--proxy-auth", default=None, help="Proxy auth. Prefer --proxy-auth-env to avoid shell history leaks.")
 @click.option("--subconverter-url", default=None)
-@click.option("-i", "--interactive", is_flag=True, help="Prompt for missing values when supported.")
+@click.option("--http-port", type=int, default=None)
+@click.option("--socks-port", type=int, default=None)
+@click.option("--controller-port", type=int, default=None)
+@click.option("--fetch-proxy", "subscription_fetch_proxy", default=None, help="Proxy for fetching subscription; use 'local' for this machine's ChatClash proxy.")
+@add_interactive_option
 def subscription_set(
     url_env: str | None,
     proxy_auth_env: str | None,
@@ -624,11 +705,14 @@ def subscription_set(
     subscription_url: str | None,
     proxy_auth: str | None,
     subconverter_url: str | None,
-    interactive: bool,
+    http_port: int | None,
+    socks_port: int | None,
+    controller_port: int | None,
+    subscription_fetch_proxy: str | None,
+    interactive: bool | None,
 ) -> None:
-    """Store ChatClash subscription values through ChatEnv."""
+    """Store ChatClash operator configuration through ChatEnv."""
 
-    _ = interactive
     if url_env:
         subscription_url = os.getenv(url_env)
         if subscription_url is None:
@@ -641,10 +725,28 @@ def subscription_set(
         subconverter_url = os.getenv(subconverter_url_env)
         if subconverter_url is None:
             raise click.ClickException(f"environment variable not set: {subconverter_url_env}")
+    values = resolve_command_inputs(
+        schema=CHATCLASH_SET_SCHEMA,
+        provided={
+            "subscription_url": subscription_url,
+            "proxy_auth": proxy_auth,
+            "subconverter_url": subconverter_url,
+            "http_port": http_port,
+            "socks_port": socks_port,
+            "controller_port": controller_port,
+            "subscription_fetch_proxy": subscription_fetch_proxy,
+        },
+        interactive=interactive,
+        usage="Usage: chatclash subscription set [--url-env NAME] [--proxy-auth-env NAME] [-i|-I]",
+    )
     changed = _write_chatclash_env(
-        subscription_url=subscription_url,
-        proxy_auth=proxy_auth,
-        subconverter_url=subconverter_url,
+        subscription_url=values.get("subscription_url"),
+        proxy_auth=values.get("proxy_auth"),
+        subconverter_url=values.get("subconverter_url"),
+        http_port=values.get("http_port"),
+        socks_port=values.get("socks_port"),
+        controller_port=values.get("controller_port"),
+        subscription_fetch_proxy=values.get("subscription_fetch_proxy"),
     )
     click.echo("updated: " + (", ".join(changed) if changed else "<none>"))
 
@@ -659,6 +761,12 @@ def subscription_status() -> None:
     click.echo(f"subscription_url: {'present' if _clean(subscription) else '<not set>'}")
     click.echo(f"proxy_auth: {'present' if _clean(proxy_auth) else '<not set>'}")
     click.echo(f"subconverter_url: {subconverter if _clean(subconverter) else '<not set>'}")
+    config = _read_local_config()
+    click.echo(f"http_port: {_http_port(config)}")
+    click.echo(f"socks_port: {_socks_port(config)}")
+    click.echo(f"controller_port: {_controller_port(config)}")
+    fetch_proxy = _subscription_fetch_proxy()
+    click.echo(f"subscription_fetch_proxy: {'present' if _clean(fetch_proxy) else '<not set>'}")
 
 
 @subscription_group.command(name="update")
@@ -861,8 +969,10 @@ def config_show() -> None:
     config = _read_local_config()
     click.echo(f"home: {config.get('home')}")
     click.echo(f"clash_dir: {config.get('clash_dir')}")
-    for key in ("http_port", "socks_port", "controller_port", "yacd_port", "fetch_mode"):
-        click.echo(f"{key}: {config.get(key)}")
+    click.echo(f"http_port: {_http_port(config)}")
+    click.echo(f"socks_port: {_socks_port(config)}")
+    click.echo(f"controller_port: {_controller_port(config)}")
+    click.echo(f"fetch_mode: {config.get('fetch_mode')}")
     subscription = _subscription_url()
     proxy_auth = _proxy_auth()
     subconverter = _subconverter_url()
@@ -888,23 +998,19 @@ def config_set(
     controller_port: int | None,
     yacd_port: int | None,
 ) -> None:
-    """Set local ChatClash configuration values."""
+    """Compatibility setter: write user configuration through ChatEnv."""
 
     config = _read_local_config()
     changed = _write_chatclash_env(
         subscription_url=subscription_url,
         proxy_auth=proxy_auth,
         subconverter_url=subconverter_url,
+        http_port=http_port,
+        socks_port=socks_port,
+        controller_port=controller_port,
     )
-    for key, value in {
-        "http_port": http_port,
-        "socks_port": socks_port,
-        "controller_port": controller_port,
-        "yacd_port": yacd_port,
-    }.items():
-        if value is not None:
-            config[key] = value
-            changed.append(key)
+    if yacd_port is not None:
+        changed.append("yacd_port_ignored")
     _write_local_config(config)
     click.echo("updated: " + (", ".join(changed) if changed else "<none>"))
 
@@ -929,16 +1035,19 @@ def update_command(dry_run: bool, no_validate: bool, yes: bool) -> None:
         return
     if _sensitive_path(output):
         _confirm_write(output, yes=yes, reason=f"{output} is in /srv/clash")
-    fetched = _fetch_url(subscription_url)
+    fetch_proxy = _resolve_fetch_proxy(config)
+    if fetch_proxy:
+        click.echo(f"fetch_proxy: {_mask(fetch_proxy)}")
+    fetched = _fetch_url(subscription_url, proxy_url=fetch_proxy)
     if not _looks_like_clash_yaml(fetched):
         subconverter = _subconverter_url()
         if not subconverter:
             raise click.ClickException("Subscription did not look like Clash YAML and no subconverter URL is configured.")
-        fetched = _fetch_url(_build_subconverter_url(subscription_url, subconverter, DEFAULT_CONFIG_URL))
+        fetched = _fetch_url(_build_subconverter_url(subscription_url, subconverter, DEFAULT_CONFIG_URL), proxy_url=fetch_proxy)
     header = _config_header(
-        http_port=int(config.get("http_port") or DEFAULT_HTTP_PORT),
-        socks_port=int(config.get("socks_port") or DEFAULT_SOCKS_PORT),
-        controller_port=int(config.get("controller_port") or DEFAULT_CONTROLLER_PORT),
+        http_port=_http_port(config),
+        socks_port=_socks_port(config),
+        controller_port=_controller_port(config),
         auth=_proxy_auth(),
     )
     content = yaml.safe_dump(header, sort_keys=False, allow_unicode=False) + "\n" + _extract_clash_body(fetched).lstrip()

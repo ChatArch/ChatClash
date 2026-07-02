@@ -45,7 +45,7 @@ def test_setup_clash_requires_confirmation_before_overwrite(tmp_path):
     result = CliRunner().invoke(main, ["setup", "clash", str(target)], input="n\n")
 
     assert result.exit_code != 0
-    assert "already exists. Continue?" in result.output
+    assert "already exists" in result.output
     assert (target / "docker-compose.yaml").read_text(encoding="utf-8") == "existing: compose\n"
 
 
@@ -53,7 +53,7 @@ def test_setup_clash_requires_confirmation_for_srv_clash():
     result = CliRunner().invoke(main, ["setup", "clash", "/srv/clash"], input="n\n")
 
     assert result.exit_code != 0
-    assert "/srv/clash is a real service directory. Continue?" in result.output
+    assert "/srv/clash is a real service directory" in result.output
 
 
 def test_status_prints_redacted_summary_not_raw_proxy_details(tmp_path):
@@ -65,7 +65,7 @@ def test_status_prints_redacted_summary_not_raw_proxy_details(tmp_path):
     assert result.exit_code == 0
     assert "docker-compose.yaml: present" in result.output
     assert "proxies: 0" in result.output
-    assert "external-controller: :7900" in result.output
+    assert "external-controller: :9090" in result.output
     assert "password" not in result.output.lower()
 
 
@@ -208,3 +208,10 @@ def test_sub_generate_fetches_subconverter_writes_config_and_backup(tmp_path):
     assert parsed["proxies"][0]["name"] == "local-direct"
     assert list((tmp_path / "backups").glob("config.yaml.*.bak"))
     assert _SubconverterHandler.seen_path.startswith("/sub?")
+
+
+def test_top_level_version_works():
+    result = CliRunner().invoke(main, ["--version"])
+
+    assert result.exit_code == 0
+    assert "0.1.0" in result.output

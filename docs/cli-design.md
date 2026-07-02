@@ -6,8 +6,8 @@
 
 它不做多机器 `remote` / `instance` 编排，也不自己发明一套 env/config 系统：
 
-- 跨机器、跨 profile 的敏感值走 ChatEnv。
-- 本机运行事实留在 `~/.chatarch/chatclash/`。
+- 用户可配置/可复用的运行配置走 ChatEnv，包括订阅、认证、端口和订阅拉取代理。
+- 本机运行布局和状态留在 `~/.chatarch/chatclash/`，例如二进制路径、PID、日志和生成后的 Mihomo config。
 - 运行的应用叫 `mihomo`，CLI 里不再叫抽象的 `engine`。
 - 启动、停止、自启动都属于 Mihomo 这个本机服务，不再单独暴露 `daemon` 组。
 
@@ -102,7 +102,7 @@ chatclash init
     └── backups/
 ```
 
-`config.yaml` 只保存本机非敏感运行事实，例如：
+`config.yaml` 只保存本机运行布局/状态，例如：
 
 ```text
 home
@@ -110,12 +110,9 @@ clash_dir
 mihomo_path
 pid_file
 log_file
-http_port
-socks_port
-controller_port
 ```
 
-订阅 URL、代理认证不写进本地 config。
+订阅 URL、代理认证、subconverter 地址、HTTP/SOCKS/controller 端口、订阅拉取代理都走 ChatEnv，不写进本地 config。
 
 ### 2. 配置订阅
 
@@ -138,7 +135,10 @@ export CLASH_SUB_URL='...'
 export CLASH_PROXY_AUTH='***'
 chatclash subscription set \
   --url-env CLASH_SUB_URL \
-  --proxy-auth-env CLASH_PROXY_AUTH
+  --proxy-auth-env CLASH_PROXY_AUTH \
+  --http-port 7890 \
+  --socks-port 7891 \
+  --controller-port 9090
 ```
 
 ChatEnv 字段：
@@ -148,6 +148,10 @@ ChatEnv 字段：
 | `CHATCLASH_SUBSCRIPTION_URL` | 是 | Clash/Mihomo 订阅 URL |
 | `CHATCLASH_PROXY_AUTH` | 是 | 本机代理认证，格式 `user:password` |
 | `CHATCLASH_SUBCONVERTER_URL` | 否 | subconverter 服务地址 |
+| `CHATCLASH_HTTP_PORT` | 否 | 本机 HTTP 代理端口 |
+| `CHATCLASH_SOCKS_PORT` | 否 | 本机 SOCKS 代理端口 |
+| `CHATCLASH_CONTROLLER_PORT` | 否 | 本机 Mihomo controller 端口 |
+| `CHATCLASH_SUBSCRIPTION_FETCH_PROXY` | 否 | 拉取订阅时使用的代理；`local` 表示走当前 ChatClash 代理 |
 
 查看订阅状态：
 
@@ -205,8 +209,8 @@ chatclash subscription update
 
 职责：
 
-- 从 ChatEnv 读取订阅 URL / 认证 / subconverter 地址。
-- 拉取订阅。
+- 从 ChatEnv 读取订阅 URL / 认证 / subconverter 地址 / 端口 / 订阅拉取代理。
+- 拉取订阅；如果 `CHATCLASH_SUBSCRIPTION_FETCH_PROXY=local`，则通过当前机器的 ChatClash 代理去拉取订阅，适合订阅源对服务器直连 IP 返回 403 的场景。
 - 生成 `~/.chatarch/chatclash/clash/config.yaml`。
 - 保留旧配置备份。
 - 做基本 YAML / Mihomo 配置校验。
@@ -440,7 +444,7 @@ socks_port: 7891
 controller_port: 9090
 ```
 
-订阅 URL、代理认证仍然只放 ChatEnv。
+订阅 URL、代理认证、端口和订阅拉取代理都只放 ChatEnv。
 
 ### 4. 安装 Mihomo 并接入自启动
 
@@ -543,7 +547,14 @@ success_count=4
 chatclash subscription update
 ```
 
-如果订阅源返回 token 过期或 403，ChatClash 不应该覆盖现有可用配置；应保留当前 `clash/config.yaml`，等订阅 URL 更新后再执行 `subscription update`。
+如果订阅源直连返回 403，但通过当前代理可访问，可配置：
+
+```bash
+chatclash subscription set --fetch-proxy local
+chatclash subscription update
+```
+
+`local` 会使用当前 ChatClash 的本机代理地址和 ChatEnv 中的代理认证来拉取订阅。若订阅源确实返回 token 过期，ChatClash 不应该覆盖现有可用配置；应保留当前 `clash/config.yaml`，等订阅 URL 更新后再执行 `subscription update`。
 
 远程 subconverter 应写入 ChatEnv：
 
@@ -552,3 +563,17 @@ chatclash subscription set --subconverter-url <SUBCONVERTER_BASE_URL>
 ```
 
 如果 subconverter 只绑定在远程机器 `127.0.0.1:25500`，当前机器不能直接访问，需要先把服务改成可访问地址，或通过 SSH tunnel 暴露成本机 URL，再写入 `CHATCLASH_SUBCONVERTER_URL`。
+
+
+## ChatEnv / ChatStyle 接入校对
+
+当前实现要求：
+
+- ChatEnv 是用户可配置项的系统来源：订阅 URL、代理认证、subconverter 地址、HTTP/SOCKS/controller 端口、订阅拉取代理。
+- 本地 `~/.chatarch/chatclash/config.yaml` 只保存机器布局/状态：home、clash_dir、engine_path、pid_file、log_file 等。
+- `chatclash subscription set` 是 ChatEnv 的薄封装，支持 `-i/-I`，并支持 `--url-env` / `--proxy-auth-env`，避免敏感值进入 shell history。
+- 写入 ChatEnv 必须走 `EnvStore.load_active()` / `save_active()`，不手写 `.env`。
+- 交互确认走 ChatStyle `ask_confirm()`；新命令输入走 `CommandSchema` / `CommandField` / `resolve_command_inputs()`。
+- 对外输出只显示 present/端口/路径/计数，订阅 URL、代理认证和代理 URL 中的认证必须脱敏。
+
+仍保留但不作为主路径的兼容入口：`config`、`engine`、`up/down/restart/logs`、`verify`、`ip-api`、旧 `sub`/`setup`。后续清理时可以分批 deprecate，但当前文档主路径只写新树。

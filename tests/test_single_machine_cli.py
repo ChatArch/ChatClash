@@ -39,7 +39,9 @@ def test_init_uses_chatclash_home_env_without_touching_real_home(tmp_path, monke
     assert saved["engine"] == "binary"
     assert saved["engine_path"] == str(home / "bin" / "mihomo")
     assert saved["clash_dir"] == str(home / "clash")
-    assert saved["http_port"] == 7890
+    assert "http_port" not in saved
+    assert "socks_port" not in saved
+    assert "controller_port" not in saved
     assert "subscription_url" not in saved
 
 
@@ -151,7 +153,7 @@ def test_update_fetches_direct_clash_yaml_preserves_auth_and_writes_backup(tmp_p
     assert clash_config["authentication"] == ["user:secret-pass"]
     assert clash_config["port"] == 7890
     assert clash_config["socks-port"] == 7891
-    assert clash_config["external-controller"] == ":7900"
+    assert clash_config["external-controller"] == ":9090"
     assert clash_config["proxies"][0]["name"] == "direct-node"
     assert list((home / "clash" / "backups").glob("config.yaml.*.bak"))
 
@@ -330,3 +332,105 @@ def test_proxy_show_and_env_use_http_and_socks_ports(tmp_path, monkeypatch):
     assert "export http_proxy=http://127.0.0.1:7890" in env.output
     assert "export https_proxy=http://127.0.0.1:7890" in env.output
     assert "export all_proxy=socks5://127.0.0.1:7891" in env.output
+
+
+
+def test_usable_ports_are_chatenv_backed_not_local_config(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
+    runner = CliRunner()
+
+    result = runner.invoke(
+        main,
+        [
+            "init",
+            "--http-port",
+            "18090",
+            "--socks-port",
+            "18091",
+            "--controller-port",
+            "19090",
+            "-y",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    env_text = (arch_home / "envs" / "chatclash" / ".env").read_text(encoding="utf-8")
+    assert "CHATCLASH_HTTP_PORT='18090'" in env_text
+    assert "CHATCLASH_SOCKS_PORT='18091'" in env_text
+    assert "CHATCLASH_CONTROLLER_PORT='19090'" in env_text
+    local = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert "http_port" not in local
+    assert "socks_port" not in local
+    assert "controller_port" not in local
+
+    status = runner.invoke(main, ["status"])
+    assert status.exit_code == 0, status.output
+    assert "http proxy: http://127.0.0.1:18090" in status.output
+    assert "socks proxy: socks5://127.0.0.1:18091" in status.output
+
+    env = runner.invoke(main, ["proxy", "env"])
+    assert env.exit_code == 0, env.output
+    assert "export http_proxy=http://127.0.0.1:18090" in env.output
+    assert "export all_proxy=socks5://127.0.0.1:18091" in env.output
+
+
+def test_subscription_set_uses_chatstyle_interactive_flags_and_can_update_chatenv_ports(tmp_path, monkeypatch):
+    home = tmp_path / "chatclash-home"
+    arch_home = tmp_path / "chatarch-home"
+    monkeypatch.setenv("CHATCLASH_HOME", str(home))
+    monkeypatch.setenv("CHATARCH_HOME", str(arch_home))
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+
+    result = runner.invoke(
+        main,
+        [
+            "subscription",
+            "set",
+            "-I",
+            "--http-port",
+            "28090",
+            "--socks-port",
+            "28091",
+            "--controller-port",
+            "29090",
+            "--fetch-proxy",
+            "local",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    env_text = (arch_home / "envs" / "chatclash" / ".env").read_text(encoding="utf-8")
+    assert "CHATCLASH_HTTP_PORT='28090'" in env_text
+    assert "CHATCLASH_SOCKS_PORT='28091'" in env_text
+    assert "CHATCLASH_CONTROLLER_PORT='29090'" in env_text
+    assert "CHATCLASH_SUBSCRIPTION_FETCH_PROXY='local'" in env_text
+    assert "CHATCLASH_SUBSCRIPTION_URL" not in env_text
+
+
+
+def test_masked_fetch_proxy_does_not_print_proxy_auth(tmp_path, monkeypatch):
+    from chatclash.cli import _mask
+
+    assert _mask("http://cube:secret-pass@127.0.0.1:7890") == "http://***@127.0.0.1:7890"
+
+
+
+def test_chatenv_schema_has_all_operator_config_fields():
+    from chatclash.config import ChatClashConfig
+
+    fields = {field.env_key: field for field in ChatClashConfig.get_fields().values()}
+    assert fields["CHATCLASH_SUBSCRIPTION_URL"].is_sensitive is True
+    assert fields["CHATCLASH_PROXY_AUTH"].is_sensitive is True
+    for key in (
+        "CHATCLASH_SUBCONVERTER_URL",
+        "CHATCLASH_SUBSCRIPTION_FETCH_PROXY",
+        "CHATCLASH_HTTP_PORT",
+        "CHATCLASH_SOCKS_PORT",
+        "CHATCLASH_CONTROLLER_PORT",
+    ):
+        assert key in fields
+    ChatClashConfig.test()

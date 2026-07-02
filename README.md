@@ -23,9 +23,14 @@ ChatArch proxy toolkit for Clash, subconverter, and proxy service operations.
 
 ```bash
 pip install -e ".[dev]"
-chatclash setup clash /tmp/clash --dry-run
-chatclash setup clash /tmp/clash -y
-chatclash status /tmp/clash
+chatclash init --dry-run
+chatclash init -y
+chatclash engine install --dry-run
+chatclash config show
+chatclash config set --subscription-url <URL>
+chatclash update --dry-run
+chatclash up --dry-run
+chatclash verify --dry-run
 chatclash proxy env
 python -m pytest -q
 ```

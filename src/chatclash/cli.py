@@ -40,6 +40,73 @@ DEFAULT_CONFIG_URL = (
 )
 
 
+def _chatclash_home() -> Path:
+    """Return this machine's ChatClash home directory."""
+
+    return Path(os.getenv("CHATCLASH_HOME") or (Path.home() / ".chatarch" / "chatclash"))
+
+
+def _local_config_path() -> Path:
+    return _chatclash_home() / "config.yaml"
+
+
+def _default_local_config(*, home: Path | None = None) -> dict[str, Any]:
+    root = home or _chatclash_home()
+    clash_dir = root / "clash"
+    return {
+        "home": str(root),
+        "clash_dir": str(clash_dir),
+        "http_port": DEFAULT_HTTP_PORT,
+        "socks_port": DEFAULT_SOCKS_PORT,
+        "controller_port": DEFAULT_CONTROLLER_PORT,
+        "yacd_port": DEFAULT_YACD_PORT,
+        "clash_image": DEFAULT_CLASH_IMAGE,
+        "yacd_image": DEFAULT_YACD_IMAGE,
+        "fetch_mode": "direct-clash-yaml",
+        "engine": "binary",
+        "engine_path": str(root / "bin" / "mihomo"),
+        "pid_file": str(root / "run" / "mihomo.pid"),
+        "log_file": str(root / "logs" / "mihomo.log"),
+    }
+
+
+def _read_local_config() -> dict[str, Any]:
+    path = _local_config_path()
+    config = _default_local_config(home=path.parent)
+    if path.exists():
+        loaded = _load_yaml_file(path)
+        config.update(loaded)
+    return config
+
+
+def _write_local_config(config: dict[str, Any]) -> None:
+    path = _local_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=False), encoding="utf-8")
+    path.chmod(0o600)
+
+
+def _clash_dir_from_local(config: dict[str, Any]) -> Path:
+    return Path(str(config.get("clash_dir") or (_chatclash_home() / "clash")))
+
+
+def _looks_like_clash_yaml(text: str) -> bool:
+    return ("proxies:" in text or "proxy-providers:" in text) and (
+        "proxy-groups:" in text or "rules:" in text
+    )
+
+
+def _extract_clash_body(text: str) -> str:
+    """Return Clash YAML body without remote header keys."""
+
+    markers = ("proxy-providers:", "proxies:", "proxy-groups:", "rule-providers:", "rules:")
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() in markers and not line.startswith((" ", "\t")):
+            return "\n".join(lines[index:]) + "\n"
+    return text
+
+
 def _load_chatenv() -> None:
     BaseEnvConfig.load_all(get_paths().envs_dir)
 
@@ -102,6 +169,7 @@ def _compose_yaml(
         "services": {
             "clash": {
                 "image": clash_image,
+                "container_name": "clash",
                 "restart": "unless-stopped",
                 "ports": [
                     f"{http_port}:{http_port}",
@@ -112,6 +180,7 @@ def _compose_yaml(
             },
             "yacd": {
                 "image": yacd_image,
+                "container_name": "yacd",
                 "restart": "unless-stopped",
                 "ports": [f"{yacd_port}:80"],
             },
@@ -282,9 +351,451 @@ SUB_INPUT_SCHEMA = CommandSchema(
 )
 
 
+def _run_shell(command: list[str], *, cwd: Path | None = None) -> str:
+    import subprocess
+
+    proc = subprocess.run(command, cwd=str(cwd) if cwd else None, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        raise click.ClickException(proc.stdout.strip() or f"command failed: {' '.join(command)}")
+    return proc.stdout
+
+
+def _docker_compose_command(clash_dir: Path, *args: str) -> list[str]:
+    compose_file = clash_dir / "docker-compose.yaml"
+    return ["docker", "compose", "-f", str(compose_file), *args]
+
+
+def _local_proxy_url(config: dict[str, Any]) -> str:
+    auth = _clean(config.get("proxy_auth"))
+    port = int(config.get("http_port") or DEFAULT_HTTP_PORT)
+    if auth:
+        return f"http://{auth}@127.0.0.1:{port}"
+    return f"http://127.0.0.1:{port}"
+
+
+def _masked_proxy_url(config: dict[str, Any]) -> str:
+    port = int(config.get("http_port") or DEFAULT_HTTP_PORT)
+    if _clean(config.get("proxy_auth")):
+        return f"http://***@127.0.0.1:{port}"
+    return f"http://127.0.0.1:{port}"
+
+
+def _curl_head(proxy_url: str, url: str, timeout: int) -> str:
+    return _run_shell(["curl", "-sS", "-m", str(timeout), "--proxy", proxy_url, "-I", url])
+
+
+def _curl_get(proxy_url: str, url: str, timeout: int) -> str:
+    return _run_shell(["curl", "-sS", "-m", str(timeout), "--proxy", proxy_url, url])
+
+
 @click.group()
 def main() -> None:
     """ChatArch CLI for Clash, subconverter, and proxy operations."""
+
+
+@main.command(name="init")
+@click.option("--home", type=click.Path(path_type=Path, file_okay=False, dir_okay=True), default=None)
+@click.option("--clash-dir", type=click.Path(path_type=Path, file_okay=False, dir_okay=True), default=None)
+@click.option("--http-port", default=DEFAULT_HTTP_PORT, show_default=True, type=int)
+@click.option("--socks-port", default=DEFAULT_SOCKS_PORT, show_default=True, type=int)
+@click.option("--controller-port", default=DEFAULT_CONTROLLER_PORT, show_default=True, type=int)
+@click.option("--yacd-port", default=DEFAULT_YACD_PORT, show_default=True, type=int)
+@click.option("--clash-image", default=DEFAULT_CLASH_IMAGE, show_default=True)
+@click.option("--yacd-image", default=DEFAULT_YACD_IMAGE, show_default=True)
+@click.option("--dry-run", is_flag=True, help="Show the init plan without writing.")
+@click.option("-y", "--yes", is_flag=True, help="Skip write confirmations.")
+def init_command(
+    home: Path | None,
+    clash_dir: Path | None,
+    http_port: int,
+    socks_port: int,
+    controller_port: int,
+    yacd_port: int,
+    clash_image: str,
+    yacd_image: str,
+    dry_run: bool,
+    yes: bool,
+) -> None:
+    """Initialize this machine's ChatClash home and binary runtime layout."""
+
+    root = home or _chatclash_home()
+    target = clash_dir or (root / "clash")
+    click.echo(f"home: {root}")
+    click.echo(f"clash_dir: {target}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    if _sensitive_path(target):
+        _confirm_write(target, yes=yes, reason=f"{target} is a real service directory")
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "bin").mkdir(exist_ok=True)
+    (root / "run").mkdir(exist_ok=True)
+    (root / "logs").mkdir(exist_ok=True)
+    (root / "cache").mkdir(exist_ok=True)
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "ui").mkdir(exist_ok=True)
+    (target / "backups").mkdir(exist_ok=True)
+    config_path = target / "config.yaml"
+    if not config_path.exists():
+        config_path.write_text(
+            _placeholder_config(http_port=http_port, socks_port=socks_port, auth=None),
+            encoding="utf-8",
+        )
+    _write_local_config(
+        {
+            "home": str(root),
+            "clash_dir": str(target),
+            "http_port": http_port,
+            "socks_port": socks_port,
+            "controller_port": controller_port,
+            "yacd_port": yacd_port,
+            "clash_image": clash_image,
+            "yacd_image": yacd_image,
+            "fetch_mode": "direct-clash-yaml",
+            "engine": "binary",
+            "engine_path": str(root / "bin" / "mihomo"),
+            "pid_file": str(root / "run" / "mihomo.pid"),
+            "log_file": str(root / "logs" / "mihomo.log"),
+        }
+    )
+    render_success(f"initialized ChatClash home at {root}")
+
+
+@main.group(name="engine")
+def engine_group() -> None:
+    """Install or inspect the lightweight Clash-compatible engine."""
+
+
+@engine_group.command(name="install")
+@click.option("--repo", default="MetaCubeX/mihomo", show_default=True)
+@click.option("--version", default="latest", show_default=True)
+@click.option("--dry-run", is_flag=True)
+@click.option("--force", is_flag=True)
+def engine_install(repo: str, version: str, dry_run: bool, force: bool) -> None:
+    """Install Mihomo as a local single-file binary under ChatClash home."""
+
+    config = _read_local_config()
+    target = Path(str(config.get("engine_path") or (_chatclash_home() / "bin" / "mihomo")))
+    click.echo(f"engine: mihomo")
+    click.echo(f"target: {target}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    if target.exists() and not force:
+        raise click.ClickException(f"engine already exists: {target}; pass --force to replace")
+    import gzip
+    import json
+    import platform
+    import tempfile
+
+    machine = platform.machine().lower()
+    if machine in {"x86_64", "amd64"}:
+        arch = "amd64"
+    elif machine in {"aarch64", "arm64"}:
+        arch = "arm64"
+    else:
+        raise click.ClickException(f"unsupported architecture: {machine}")
+    release_url = f"https://api.github.com/repos/{repo}/releases/latest" if version == "latest" else f"https://api.github.com/repos/{repo}/releases/tags/{version}"
+    request = urllib.request.Request(release_url, headers={"User-Agent": "chatclash/0.1"})
+    with urllib.request.urlopen(request, timeout=60) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    assets = release.get("assets") or []
+    candidates = []
+    for asset in assets:
+        name = asset.get("name") or ""
+        if "linux" in name and arch in name and name.endswith(".gz") and "compatible" not in name:
+            candidates.append(asset)
+    if not candidates:
+        for asset in assets:
+            name = asset.get("name") or ""
+            if "linux" in name and arch in name and name.endswith(".gz"):
+                candidates.append(asset)
+    if not candidates:
+        raise click.ClickException(f"no linux {arch} .gz asset found for {repo} {release.get('tag_name')}")
+    asset = candidates[0]
+    download_url = asset.get("browser_download_url")
+    if not download_url:
+        raise click.ClickException("selected release asset has no download URL")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        urllib.request.urlretrieve(download_url, tmp_path)
+        with gzip.open(tmp_path, "rb") as src, target.open("wb") as dst:
+            shutil.copyfileobj(src, dst)
+        target.chmod(0o755)
+    finally:
+        tmp_path.unlink(missing_ok=True)
+    render_success(f"installed {asset.get('name')} to {target}")
+
+
+@main.group(name="config")
+def config_group() -> None:
+    """Show or update this machine's ChatClash configuration."""
+
+
+@config_group.command(name="show")
+def config_show() -> None:
+    """Show a redacted summary of the local ChatClash config."""
+
+    config = _read_local_config()
+    click.echo(f"home: {config.get('home')}")
+    click.echo(f"clash_dir: {config.get('clash_dir')}")
+    for key in ("http_port", "socks_port", "controller_port", "yacd_port", "fetch_mode"):
+        click.echo(f"{key}: {config.get(key)}")
+    click.echo(f"subscription_url: {'present' if _clean(config.get('subscription_url')) else '<not set>'}")
+    click.echo(f"proxy_auth: {'present' if _clean(config.get('proxy_auth')) else '<not set>'}")
+    subconverter = _clean(config.get("subconverter_url"))
+    click.echo(f"subconverter_url: {subconverter if subconverter else '<not set>'}")
+
+
+@config_group.command(name="set")
+@click.option("--subscription-url", default=None)
+@click.option("--proxy-auth", default=None)
+@click.option("--subconverter-url", default=None)
+@click.option("--http-port", type=int, default=None)
+@click.option("--socks-port", type=int, default=None)
+@click.option("--controller-port", type=int, default=None)
+@click.option("--yacd-port", type=int, default=None)
+def config_set(
+    subscription_url: str | None,
+    proxy_auth: str | None,
+    subconverter_url: str | None,
+    http_port: int | None,
+    socks_port: int | None,
+    controller_port: int | None,
+    yacd_port: int | None,
+) -> None:
+    """Set local ChatClash configuration values."""
+
+    config = _read_local_config()
+    updates = {
+        "subscription_url": subscription_url,
+        "proxy_auth": proxy_auth,
+        "subconverter_url": subconverter_url,
+        "http_port": http_port,
+        "socks_port": socks_port,
+        "controller_port": controller_port,
+        "yacd_port": yacd_port,
+    }
+    changed = []
+    for key, value in updates.items():
+        if value is not None:
+            config[key] = value
+            changed.append(key)
+    _write_local_config(config)
+    click.echo("updated: " + (", ".join(changed) if changed else "<none>"))
+
+
+@main.command(name="update")
+@click.option("--dry-run", is_flag=True, help="Show the update plan without writing.")
+@click.option("--no-validate", is_flag=True, help="Skip docker/clash config validation.")
+@click.option("-y", "--yes", is_flag=True, help="Skip write confirmations.")
+def update_command(dry_run: bool, no_validate: bool, yes: bool) -> None:
+    """Refresh this machine's Clash config from the configured subscription."""
+
+    config = _read_local_config()
+    target_dir = _clash_dir_from_local(config)
+    output = target_dir / "config.yaml"
+    subscription_url = _clean(config.get("subscription_url")) or _subscription_url()
+    if not subscription_url:
+        raise click.ClickException("Missing subscription URL. Run `chatclash config set --subscription-url URL`.")
+    click.echo(f"output: {output}")
+    click.echo(f"subscription_url: {_mask(subscription_url)}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    if _sensitive_path(output):
+        _confirm_write(output, yes=yes, reason=f"{output} is in /srv/clash")
+    fetched = _fetch_url(subscription_url)
+    if not _looks_like_clash_yaml(fetched):
+        subconverter = _clean(config.get("subconverter_url")) or _subconverter_url()
+        if not subconverter:
+            raise click.ClickException("Subscription did not look like Clash YAML and no subconverter URL is configured.")
+        fetched = _fetch_url(_build_subconverter_url(subscription_url, subconverter, DEFAULT_CONFIG_URL))
+    header = _config_header(
+        http_port=int(config.get("http_port") or DEFAULT_HTTP_PORT),
+        socks_port=int(config.get("socks_port") or DEFAULT_SOCKS_PORT),
+        auth=_clean(config.get("proxy_auth")),
+    )
+    content = yaml.safe_dump(header, sort_keys=False, allow_unicode=False) + "\n" + _extract_clash_body(fetched).lstrip()
+    parsed = yaml.safe_load(content)
+    if not isinstance(parsed, dict):
+        raise click.ClickException("Generated Clash config is not a YAML object")
+    if not no_validate:
+        # First phase keeps validation optional for CI and machines without Docker.
+        render_warning("validation skipped unless --no-validate is removed in a Docker-enabled environment")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / "backups").mkdir(exist_ok=True)
+    backup = _backup_existing(output)
+    output.write_text(content, encoding="utf-8")
+    proxies, groups, rules = _counts(parsed)
+    click.echo(f"proxies: {proxies}")
+    click.echo(f"proxy-groups: {groups}")
+    click.echo(f"rules: {rules}")
+    if backup:
+        click.echo(f"backup-written: {backup}")
+    click.echo("update=OK")
+
+
+@main.command(name="up")
+@click.option("--dry-run", is_flag=True)
+def service_up(dry_run: bool) -> None:
+    """Start this machine's Clash service."""
+
+    config = _read_local_config()
+    clash_dir = _clash_dir_from_local(config)
+    engine_path = Path(str(config.get("engine_path") or (_chatclash_home() / "bin" / "mihomo")))
+    pid_file = Path(str(config.get("pid_file") or (_chatclash_home() / "run" / "mihomo.pid")))
+    log_file = Path(str(config.get("log_file") or (_chatclash_home() / "logs" / "mihomo.log")))
+    command = [str(engine_path), "-d", str(clash_dir)]
+    click.echo(" ".join(command))
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    if not engine_path.exists():
+        raise click.ClickException(f"engine binary missing: {engine_path}. Run `chatclash engine install` first.")
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    import subprocess
+
+    with log_file.open("ab") as log:
+        proc = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    pid_file.write_text(str(proc.pid), encoding="utf-8")
+    render_success("service up")
+
+
+@main.command(name="down")
+@click.option("--dry-run", is_flag=True)
+def service_down(dry_run: bool) -> None:
+    """Stop this machine's Clash service."""
+
+    config = _read_local_config()
+    pid_file = Path(str(config.get("pid_file") or (_chatclash_home() / "run" / "mihomo.pid")))
+    click.echo(f"kill pid from {pid_file}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    if pid_file.exists():
+        pid = pid_file.read_text(encoding="utf-8").strip()
+        if pid:
+            _run_shell(["kill", pid])
+        pid_file.unlink(missing_ok=True)
+    render_success("service down")
+
+
+@main.command(name="restart")
+@click.option("--dry-run", is_flag=True)
+def service_restart(dry_run: bool) -> None:
+    """Restart this machine's Clash service."""
+
+    config = _read_local_config()
+    click.echo("chatclash down && chatclash up")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    pid_file = Path(str(config.get("pid_file") or (_chatclash_home() / "run" / "mihomo.pid")))
+    if pid_file.exists():
+        pid = pid_file.read_text(encoding="utf-8").strip()
+        if pid:
+            _run_shell(["kill", pid])
+        pid_file.unlink(missing_ok=True)
+    engine_path = Path(str(config.get("engine_path") or (_chatclash_home() / "bin" / "mihomo")))
+    clash_dir = _clash_dir_from_local(config)
+    log_file = Path(str(config.get("log_file") or (_chatclash_home() / "logs" / "mihomo.log")))
+    if not engine_path.exists():
+        raise click.ClickException(f"engine binary missing: {engine_path}. Run `chatclash engine install` first.")
+    import subprocess
+    with log_file.open("ab") as log:
+        proc = subprocess.Popen([str(engine_path), "-d", str(clash_dir)], stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    pid_file.write_text(str(proc.pid), encoding="utf-8")
+    render_success("service restarted")
+
+
+@main.command(name="logs")
+@click.option("--tail", default=100, show_default=True, type=int)
+@click.option("--dry-run", is_flag=True)
+def service_logs(tail: int, dry_run: bool) -> None:
+    """Show redacted Clash logs."""
+
+    config = _read_local_config()
+    log_file = Path(str(config.get("log_file") or (_chatclash_home() / "logs" / "mihomo.log")))
+    click.echo(f"tail -n {tail} {log_file}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    if not log_file.exists():
+        return
+    output = _run_shell(["tail", "-n", str(tail), str(log_file)])
+    click.echo(_redact_text(output), nl=False)
+
+
+@main.command(name="verify")
+@click.option("--url", "urls", multiple=True)
+@click.option("--min-success", default=2, show_default=True, type=int)
+@click.option("--timeout", default=30, show_default=True, type=int)
+@click.option("--dry-run", is_flag=True)
+def verify_command(urls: tuple[str, ...], min_success: int, timeout: int, dry_run: bool) -> None:
+    """Verify the local Clash HTTP proxy from inside this machine."""
+
+    config = _read_local_config()
+    proxy = _local_proxy_url(config)
+    masked_proxy = _masked_proxy_url(config)
+    targets = list(urls) or [
+        "http://example.com",
+        "https://example.com",
+        "https://github.com",
+        "https://www.gstatic.com/generate_204",
+    ]
+    click.echo(f"proxy: {masked_proxy}")
+    if dry_run:
+        for url in targets:
+            click.echo(f"check: {url}")
+        render_success("dry-run only; no files changed")
+        return
+    ok = 0
+    for url in targets:
+        click.echo(f"-- {url}")
+        try:
+            output = _curl_head(proxy, url, timeout)
+            first = output.splitlines()[0] if output.splitlines() else "<empty>"
+            click.echo(first)
+            if " 200" in output or " 204" in output or " 301" in output or " 302" in output:
+                ok += 1
+        except click.ClickException as exc:
+            click.echo(f"failed: {exc}")
+    click.echo(f"success_count={ok}")
+    if ok < min_success:
+        raise click.ClickException(f"verification failed: success_count={ok} < {min_success}")
+
+
+@main.command(name="ip-api")
+@click.option("--lang", default="zh-CN", show_default=True)
+@click.option("--timeout", default=20, show_default=True, type=int)
+@click.option("--dry-run", is_flag=True)
+def ip_api_command(lang: str, timeout: int, dry_run: bool) -> None:
+    """Query ip-api.com through the local Clash HTTP proxy."""
+
+    config = _read_local_config()
+    proxy = _local_proxy_url(config)
+    masked_proxy = _masked_proxy_url(config)
+    url = f"http://ip-api.com/json/?lang={urllib.parse.quote(lang)}"
+    click.echo(f"proxy: {masked_proxy}")
+    click.echo(f"url: {url}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+        return
+    output = _curl_get(proxy, url, timeout)
+    try:
+        data = yaml.safe_load(output)
+    except yaml.YAMLError:
+        data = None
+    if isinstance(data, dict):
+        for key in ("status", "country", "countryCode", "regionName", "city", "isp", "org", "as", "query", "timezone"):
+            if key in data:
+                click.echo(f"{key}={data[key]}")
+    else:
+        click.echo(output)
 
 
 @main.group()

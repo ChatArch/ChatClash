@@ -2,20 +2,23 @@
 
 ## 定位
 
-`chatclash` 第一阶段只做一个最小闭环：
+`chatclash` 当前阶段先做任务导向的单机闭环：
 
 ```text
-生成 Clash/Yacd compose 目录
-  -> 从 chatenv 或 CLI 读取订阅 URL 和 subconverter URL
-  -> 调用 subconverter 生成 Clash 配置
-  -> 写入 config.yaml
+初始化 ~/.chatarch/chatclash
+  -> 下载/安装轻量 Mihomo 二进制
+  -> 配置订阅 URL、代理认证和端口
+  -> 刷新 Clash config.yaml
+  -> 启动本机代理服务
+  -> verify / ip-api 验收代理可用
 ```
 
-不做私有配置系统，不写 `chatclash.toml`。setup 阶段传入的端口、镜像、目录等参数只用于当次生成。生成后的事实来源是：
+不做多机器编排，不做 instance inventory，不把 Docker 作为当前方案候选。当前事实来源是：
 
 ```text
-CLASH_DIR/docker-compose.yaml
-CLASH_DIR/config.yaml
+~/.chatarch/chatclash/config.yaml
+~/.chatarch/chatclash/bin/mihomo
+~/.chatarch/chatclash/clash/config.yaml
 ```
 
 ## ChatArch 规范
@@ -53,6 +56,57 @@ CHATCLASH_AUTH
 ```
 
 这些都是 CLI 参数、默认值或当次生成配置，不进入 chatenv。
+
+
+## 单机维护命令（当前开发方向）
+
+当前阶段 `ChatClash` 定位为单机 Clash 维护工具：在哪台机器上使用，就在那台机器本地运行 `chatclash`。SSH 只负责进入机器，`chatclash` 不做多机器编排或 instance inventory。默认 backend 是轻量二进制 Mihomo；当前方案不提供 Docker 候选。
+
+正式默认目录采用 Arch 系列位置：
+
+```text
+~/.chatarch/chatclash/
+```
+
+测试和开发验证应放在 Playground/任务实验区或一次性临时目录；不要把测试安装、测试 Docker 服务或临时 Clash config 写入 `~/.chatarch` 或 `/srv/clash`。
+
+新增顶层命令：
+
+```text
+chatclash init
+chatclash engine install
+chatclash config show
+chatclash config set
+chatclash update
+chatclash up/down/restart/logs
+chatclash verify
+chatclash ip-api
+```
+
+
+### Engine backend
+
+默认：
+
+```text
+engine: binary
+engine_path: ~/.chatarch/chatclash/bin/mihomo
+```
+
+`chatclash engine install` 从 Mihomo release 下载当前平台单文件二进制到 `bin/mihomo`。这比 Docker 更适合 `~/.chatarch/chatclash/` 这种轻量正式目录。
+
+
+### `chatclash init`
+
+初始化当前机器的 ChatClash home、轻量二进制运行目录、placeholder Clash `config.yaml` 和本地配置文件。默认 home 为 `~/.chatarch/chatclash/`，测试可通过 `CHATCLASH_HOME` 或 `--home` 指向临时目录。
+
+### `chatclash config show/set`
+
+查看或设置订阅 URL、代理认证、subconverter URL 与端口。输出必须脱敏敏感值。
+
+### `chatclash update`
+
+从订阅 URL 刷新 Clash 配置：直接 Clash YAML 优先；如果返回内容不是 Clash YAML，则在配置了 subconverter URL 时通过 subconverter 生成。写入前备份旧 `config.yaml`，并保留本机 header（端口、认证、controller）。
 
 ## 接口
 

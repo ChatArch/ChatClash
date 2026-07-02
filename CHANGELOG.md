@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add single-machine maintenance commands: `init`, `engine install`, `config show`, `config set`, `update`, service lifecycle commands, `verify`, and `ip-api`.
+- Keep sensitive subscription URLs and proxy authentication masked in command output.
+- Default to a lightweight Mihomo binary backend for the single-machine flow.
+- Support direct Clash YAML subscription refresh with local header/auth preservation and backups.
+
+
 ## 0.1.0
 
 ### Added

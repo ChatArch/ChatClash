@@ -23,21 +23,29 @@ ChatArch proxy toolkit for Clash, subconverter, and proxy service operations.
 
 ```bash
 pip install -e ".[dev]"
-chatclash setup clash /tmp/clash --dry-run
-chatclash setup clash /tmp/clash -y
-chatclash status /tmp/clash
-chatclash proxy env
-python -m pytest -q
+chatclash init
+chatclash subscription set -i
+# 如果订阅源对服务器直连返回 403，可加：chatclash subscription set --fetch-proxy local
+chatclash mihomo install --daemon
+chatclash subscription update
+chatclash mihomo start
+chatclash status
+chatclash check proxy
+chatclash check ip
 ```
 
-订阅转换依赖外部 subconverter 服务：
+常用维护命令：
 
 ```bash
-chatenv use -t chatclash sub-main
-chatclash sub status
-chatclash sub url
-chatclash sub generate -o /tmp/clash/config.yaml --dry-run
-chatclash sub generate -o /tmp/clash/config.yaml -y
+chatclash subscription status
+chatclash subscription set --http-port 7890 --socks-port 7891 --controller-port 9090
+chatclash subscription update
+chatclash mihomo update
+chatclash mihomo restart
+chatclash mihomo logs
+chatclash proxy show
+eval "$(chatclash proxy env)"
+python -m pytest -q
 ```
 
 ## CLI 规范
@@ -59,3 +67,17 @@ chatclash sub generate -o /tmp/clash/config.yaml -y
 ## 开发说明
 
 扩展脚手架前，先阅读 `DEVELOP.md` 和 `AGENTS.md`。
+
+## ChatEnv 配置项
+
+ChatClash 用户可配置项统一写入 ChatEnv，不写入本地运行 config：
+
+| 字段 | 说明 |
+|---|---|
+| `CHATCLASH_SUBSCRIPTION_URL` | Clash/Mihomo 订阅 URL，敏感 |
+| `CHATCLASH_PROXY_AUTH` | 本机代理认证，敏感 |
+| `CHATCLASH_SUBCONVERTER_URL` | subconverter 服务地址 |
+| `CHATCLASH_HTTP_PORT` | HTTP 代理端口 |
+| `CHATCLASH_SOCKS_PORT` | SOCKS 代理端口 |
+| `CHATCLASH_CONTROLLER_PORT` | Mihomo controller 端口 |
+| `CHATCLASH_SUBSCRIPTION_FETCH_PROXY` | 拉取订阅时使用的代理，`local` 表示走当前 ChatClash 代理 |

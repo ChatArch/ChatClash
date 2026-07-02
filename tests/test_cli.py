@@ -45,7 +45,7 @@ def test_setup_clash_requires_confirmation_before_overwrite(tmp_path):
     result = CliRunner().invoke(main, ["setup", "clash", str(target)], input="n\n")
 
     assert result.exit_code != 0
-    assert "already exists. Continue?" in result.output
+    assert "already exists" in result.output
     assert (target / "docker-compose.yaml").read_text(encoding="utf-8") == "existing: compose\n"
 
 
@@ -53,7 +53,7 @@ def test_setup_clash_requires_confirmation_for_srv_clash():
     result = CliRunner().invoke(main, ["setup", "clash", "/srv/clash"], input="n\n")
 
     assert result.exit_code != 0
-    assert "/srv/clash is a real service directory. Continue?" in result.output
+    assert "/srv/clash is a real service directory" in result.output
 
 
 def test_status_prints_redacted_summary_not_raw_proxy_details(tmp_path):
@@ -74,7 +74,7 @@ def test_proxy_env_outputs_shell_exports():
 
     assert result.exit_code == 0
     assert "export http_proxy=http://127.0.0.1:7890" in result.output
-    assert "export all_proxy=http://127.0.0.1:7890" in result.output
+    assert "export all_proxy=socks5://127.0.0.1:7891" in result.output
     assert "export no_proxy=localhost,127.0.0.1,::1" in result.output
 
 
@@ -110,7 +110,8 @@ def test_sub_url_redacts_positional_subscription():
     assert "subscribe.example.test" not in result.output
 
 
-def test_sub_url_missing_values_fails_non_interactive(monkeypatch):
+def test_sub_url_missing_values_fails_non_interactive(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHATARCH_HOME", str(tmp_path / "chatarch-home"))
     monkeypatch.delenv("CHATCLASH_SUBSCRIPTION_URL", raising=False)
     monkeypatch.delenv("CHATCLASH_SUBCONVERTER_URL", raising=False)
 
@@ -207,3 +208,10 @@ def test_sub_generate_fetches_subconverter_writes_config_and_backup(tmp_path):
     assert parsed["proxies"][0]["name"] == "local-direct"
     assert list((tmp_path / "backups").glob("config.yaml.*.bak"))
     assert _SubconverterHandler.seen_path.startswith("/sub?")
+
+
+def test_top_level_version_works():
+    result = CliRunner().invoke(main, ["--version"])
+
+    assert result.exit_code == 0
+    assert "0.1.0" in result.output

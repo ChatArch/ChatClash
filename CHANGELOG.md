@@ -2,17 +2,18 @@
 
 ## Unreleased
 
-- Add single-machine maintenance commands: `init`, `engine install`, `config show`, `config set`, `update`, service lifecycle commands, `verify`, and `ip-api`.
+- Refine the command tree to `init`, `status`, `sub`, `proxy`, `mihomo`, and `check`.
+- Split CLI behavior into reusable Python API modules for subscription, proxy, Mihomo runtime, checks, status, and local paths.
 - Keep sensitive subscription URLs and proxy authentication masked in command output.
 - Default to a lightweight Mihomo binary backend for the single-machine flow.
-- Support direct Clash YAML subscription refresh with local header/auth preservation and backups.
+- Support direct Clash YAML subscription refresh with local header/auth preservation and private backups.
 
 
 ## 0.1.0
 
 ### Added
-- `setup clash`, `status`, `proxy env`, `sub status`, `sub url`, and `sub generate`.
-- `.codex/skills/chatclash-usage` for quickstart, service startup, and Docker proxy setup.
+- Initial CLI scaffolding and subscription conversion helpers.
+- `.codex/skills/chatclash-usage` for quickstart and proxy setup notes.
 
 ### Changed
 - Real Docker Compose generation and subconverter-backed config generation now match the PRD.

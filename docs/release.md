@@ -5,7 +5,7 @@
 - `python -m pytest -q`
 - `python -m build`
 - Optional real smoke check:
-  - `~/.codex/skills/chatclash-dev/scripts/smoke_service.sh /home/rexwzh/workspace/core/ChatClash`
+  - `<LOCAL_SKILLS_DIR>/chatclash-dev/scripts/smoke_service.sh <CHATCLASH_REPO>`
 
 ## Local Release Flow
 

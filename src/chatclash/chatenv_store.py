@@ -16,7 +16,6 @@ class OperatorConfig:
     subscription_url: str | None = None
     proxy_auth: str | None = None
     subconverter_url: str | None = None
-    subscription_fetch_proxy: str | None = None
 
 
 def load_chatenv() -> None:
@@ -33,7 +32,6 @@ def read_operator_config() -> OperatorConfig:
         subscription_url=_value("CHATCLASH_SUBSCRIPTION_URL", ChatClashConfig.CHATCLASH_SUBSCRIPTION_URL),
         proxy_auth=_value("CHATCLASH_PROXY_AUTH", ChatClashConfig.CHATCLASH_PROXY_AUTH),
         subconverter_url=_value("CHATCLASH_SUBCONVERTER_URL", ChatClashConfig.CHATCLASH_SUBCONVERTER_URL),
-        subscription_fetch_proxy=_value("CHATCLASH_SUBSCRIPTION_FETCH_PROXY", ChatClashConfig.CHATCLASH_SUBSCRIPTION_FETCH_PROXY),
     )
 
 
@@ -42,7 +40,6 @@ def write_operator_config(
     subscription_url: str | None = None,
     proxy_auth: str | None = None,
     subconverter_url: str | None = None,
-    subscription_fetch_proxy: str | None = None,
 ) -> list[str]:
     store = EnvStore(get_paths().envs_dir)
     values = store.load_active(ChatClashConfig)
@@ -51,7 +48,6 @@ def write_operator_config(
         "CHATCLASH_SUBSCRIPTION_URL": subscription_url,
         "CHATCLASH_PROXY_AUTH": proxy_auth,
         "CHATCLASH_SUBCONVERTER_URL": subconverter_url,
-        "CHATCLASH_SUBSCRIPTION_FETCH_PROXY": subscription_fetch_proxy,
     }
     for key, value in updates.items():
         if value is not None:
@@ -69,5 +65,4 @@ def operator_status() -> dict[str, str]:
         "subscription_url": "present" if cfg.subscription_url else "<not set>",
         "proxy_auth": "present" if cfg.proxy_auth else "<not set>",
         "subconverter_url": mask(cfg.subconverter_url),
-        "subscription_fetch_proxy": mask(cfg.subscription_fetch_proxy),
     }

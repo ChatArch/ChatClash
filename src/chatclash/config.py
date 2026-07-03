@@ -26,10 +26,6 @@ class ChatClashConfig(BaseEnvConfig):
         "CHATCLASH_SUBCONVERTER_URL",
         desc="Optional subconverter service base URL.",
     )
-    CHATCLASH_SUBSCRIPTION_FETCH_PROXY = EnvField(
-        "CHATCLASH_SUBSCRIPTION_FETCH_PROXY",
-        desc="Proxy used to fetch subscription URL; use 'local' for this machine's ChatClash proxy.",
-    )
 
     @classmethod
     def test(cls) -> None:
@@ -37,13 +33,16 @@ class ChatClashConfig(BaseEnvConfig):
             "CHATCLASH_SUBSCRIPTION_URL",
             "CHATCLASH_PROXY_AUTH",
             "CHATCLASH_SUBCONVERTER_URL",
-            "CHATCLASH_SUBSCRIPTION_FETCH_PROXY",
         }
         actual = {field.env_key for field in cls.get_fields().values()}
         missing = sorted(required - actual)
         if missing:
             raise RuntimeError(f"missing ChatClash env fields: {', '.join(missing)}")
-        print("OK")
+
+        from .checks import check_proxy
+
+        result = check_proxy(min_success=1, timeout=10)
+        print(f"OK proxy success_count={result.success_count}")
 
 
 __all__ = ["ChatClashConfig"]

@@ -18,18 +18,15 @@ chatclash
 │   ├── set
 │   ├── show
 │   └── env
-├── mihomo
-│   ├── install
-│   ├── uninstall
-│   ├── update
-│   ├── start
-│   ├── stop
-│   ├── restart
-│   ├── status
-│   └── logs
-└── check
-    ├── proxy
-    └── ip
+└── mihomo
+    ├── install
+    ├── uninstall
+    ├── update
+    ├── start
+    ├── stop
+    ├── restart
+    ├── status
+    └── logs
 ```
 
 ## Review requirements

@@ -21,13 +21,11 @@ def set_subscription_config(
     subscription_url: str | None = None,
     proxy_auth: str | None = None,
     subconverter_url: str | None = None,
-    fetch_proxy: str | None = None,
 ) -> list[str]:
     return write_operator_config(
         subscription_url=subscription_url,
         proxy_auth=proxy_auth,
         subconverter_url=subconverter_url,
-        subscription_fetch_proxy=fetch_proxy,
     )
 
 
@@ -138,16 +136,17 @@ def generate_subscription_config(
     return result
 
 
-def update_subscription_config(*, dry_run: bool = False, no_validate: bool = False) -> dict[str, Any]:
+def update_subscription_config(*, dry_run: bool = False, no_validate: bool = False, fetch_proxy: str | None = None) -> dict[str, Any]:
     op = read_operator_config()
     if not op.subscription_url:
         raise ValueError("missing subscription URL; run sub set first")
     config = read_local_config()
     proxy = None
-    if op.subscription_fetch_proxy == "local":
+    fetch_proxy = clean(fetch_proxy)
+    if fetch_proxy == "local":
         proxy = f"http://127.0.0.1:{http_port(config)}"
-    elif op.subscription_fetch_proxy:
-        proxy = op.subscription_fetch_proxy
+    elif fetch_proxy:
+        proxy = fetch_proxy
     if dry_run:
         target = clash_dir(config) / "config.yaml"
         return {"target": str(target), "dry_run": True, "validated": False}

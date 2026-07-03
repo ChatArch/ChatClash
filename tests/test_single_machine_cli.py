@@ -51,11 +51,10 @@ def test_chatenv_schema_has_operator_config_only():
     assert fields["CHATCLASH_SUBSCRIPTION_URL"].is_sensitive is True
     assert fields["CHATCLASH_PROXY_AUTH"].is_sensitive is True
     assert "CHATCLASH_SUBCONVERTER_URL" in fields
-    assert "CHATCLASH_SUBSCRIPTION_FETCH_PROXY" in fields
+    assert "CHATCLASH_" + "SUBSCRIPTION_FETCH_PROXY" not in fields
     assert "CHATCLASH_HTTP_PORT" not in fields
     assert "CHATCLASH_SOCKS_PORT" not in fields
     assert "CHATCLASH_CONTROLLER_PORT" not in fields
-    ChatClashConfig.test()
 
 
 def test_local_config_keeps_runtime_facts_not_secrets(tmp_path, monkeypatch):

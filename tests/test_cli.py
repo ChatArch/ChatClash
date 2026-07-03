@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import yaml
@@ -22,8 +23,23 @@ OLD_TOP_LEVEL = {
     "up",
     "update",
     "verify",
+    "check",
 }
-TARGET_TOP_LEVEL = {"init", "status", "sub", "proxy", "mihomo", "check"}
+TARGET_TOP_LEVEL = {"init", "status", "sub", "proxy", "mihomo"}
+
+
+def _help_command_names(output: str) -> set[str]:
+    names: set[str] = set()
+    in_commands = False
+    for line in output.splitlines():
+        if line.strip() == "Commands:":
+            in_commands = True
+            continue
+        if not in_commands:
+            continue
+        if line.startswith("  ") and line.strip() and not line.strip().startswith("-"):
+            names.add(line.strip().split()[0])
+    return names
 
 
 def _clean_env(monkeypatch, tmp_path):
@@ -33,7 +49,6 @@ def _clean_env(monkeypatch, tmp_path):
         "CHATCLASH_SUBSCRIPTION_URL",
         "CHATCLASH_PROXY_AUTH",
         "CHATCLASH_SUBCONVERTER_URL",
-        "CHATCLASH_SUBSCRIPTION_FETCH_PROXY",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -43,21 +58,23 @@ def test_cli_tree_is_concise_and_old_commands_removed():
     result = runner.invoke(main, ["--help"])
 
     assert result.exit_code == 0, result.output
-    command_lines = {line.strip().split()[0] for line in result.output.splitlines() if line.startswith("  ") and line.strip() and not line.strip().startswith("--")}
+    command_lines = _help_command_names(result.output)
     assert TARGET_TOP_LEVEL <= command_lines
     assert OLD_TOP_LEVEL.isdisjoint(command_lines)
 
     expected_groups = {
-        "sub": {"set", "status", "update", "url", "generate"},
-        "proxy": {"set", "show", "env"},
+        "sub": {"set", "status", "update", "url", "generate", "converter"},
+        "proxy": {"show", "env"},
         "mihomo": {"install", "uninstall", "update", "start", "stop", "restart", "status", "logs"},
-        "check": {"proxy", "ip"},
     }
     for group, commands in expected_groups.items():
         help_result = runner.invoke(main, [group, "--help"])
         assert help_result.exit_code == 0, help_result.output
-        for command in commands:
-            assert command in help_result.output
+        assert _help_command_names(help_result.output) == commands
+
+    converter_help = runner.invoke(main, ["sub", "converter", "--help"])
+    assert converter_help.exit_code == 0, converter_help.output
+    assert _help_command_names(converter_help.output) == {"install", "start", "stop", "status", "logs"}
 
 
 def test_removed_old_commands_fail_nonzero():
@@ -68,45 +85,56 @@ def test_removed_old_commands_fail_nonzero():
         assert "No such command" in result.output
 
 
-def test_init_status_proxy_set_and_env_use_machine_local_config(tmp_path, monkeypatch):
+def test_init_status_proxy_show_and_env_use_machine_local_config(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     home = tmp_path / "chatclash-home"
     runner = CliRunner()
 
-    init = runner.invoke(main, ["init", "-y"])
+    init = runner.invoke(
+        main,
+        [
+            "init",
+            "--subscription-url",
+            "https://subscribe.example.test/secret-token",
+            "--proxy-auth",
+            "user:secret-pass",
+            "-I",
+        ],
+    )
     assert init.exit_code == 0, init.output
     assert (home / "config.yaml").exists()
     assert (home / "clash" / "config.yaml").exists()
     assert not (home / "clash" / "docker-compose.yaml").exists()
 
-    proxy_set = runner.invoke(
-        main,
-        ["proxy", "set", "--http-port", "18090", "--socks-port", "18091", "--controller-port", "19090"],
-    )
-    assert proxy_set.exit_code == 0, proxy_set.output
-
     local = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
-    assert local["http_port"] == 18090
-    assert local["socks_port"] == 18091
-    assert local["controller_port"] == 19090
+    assert local["http_port"] == 7890
+    assert local["socks_port"] == 7891
     assert "subscription_url" not in local
     assert "proxy_auth" not in local
 
     show = runner.invoke(main, ["proxy", "show"])
     assert show.exit_code == 0, show.output
-    assert "HTTP proxy: http://127.0.0.1:18090" in show.output
-    assert "SOCKS proxy: socks5://127.0.0.1:18091" in show.output
+    assert "HTTP proxy: http://user:***@127.0.0.1:7890" in show.output
+    assert "SOCKS proxy: socks5://user:***@127.0.0.1:7891" in show.output
+    assert "auth_present: yes" in show.output
+    assert "auth_user: user" in show.output
+    assert "proxy_auth: user:***" in show.output
+    assert "secret-pass" not in show.output
 
-    env = runner.invoke(main, ["proxy", "env"])
-    assert env.exit_code == 0, env.output
-    assert "export http_proxy=http://127.0.0.1:18090" in env.output
-    assert "export all_proxy=socks5://127.0.0.1:18091" in env.output
+    env_masked = runner.invoke(main, ["proxy", "env"])
+    assert env_masked.exit_code == 0, env_masked.output
+    assert "--no-mask" in env_masked.output
+    assert "user:***@127.0.0.1:7890" in env_masked.output
+    assert "secret-pass" not in env_masked.output
+    env_plain = runner.invoke(main, ["proxy", "env", "--no-mask"])
+    assert env_plain.exit_code == 0, env_plain.output
+    assert "export http_proxy=http://user:secret-pass@127.0.0.1:7890" in env_plain.output
 
     status = runner.invoke(main, ["status"])
     assert status.exit_code == 0, status.output
     assert "mihomo_installed: no" in status.output
-    assert "subscription_set: no" in status.output
-    assert "http_proxy: http://127.0.0.1:18090" in status.output
+    assert "subscription_set: yes" in status.output
+    assert "http_proxy: http://127.0.0.1:7890" in status.output
 
 
 def test_sub_set_status_uses_chatenv_and_masks_output(tmp_path, monkeypatch):
@@ -115,7 +143,7 @@ def test_sub_set_status_uses_chatenv_and_masks_output(tmp_path, monkeypatch):
     monkeypatch.setenv("CLASH_SUB_URL", "https://subscribe.example.test/secret-token")
     monkeypatch.setenv("CLASH_PROXY_AUTH", "user:secret-pass")
     runner = CliRunner()
-    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
 
     result = runner.invoke(
         main,
@@ -124,12 +152,8 @@ def test_sub_set_status_uses_chatenv_and_masks_output(tmp_path, monkeypatch):
             "set",
             "--url-env",
             "CLASH_SUB_URL",
-            "--proxy-auth-env",
-            "CLASH_PROXY_AUTH",
             "--subconverter-url",
             "http://127.0.0.1:25500",
-            "--fetch-proxy",
-            "local",
             "-I",
         ],
     )
@@ -140,9 +164,22 @@ def test_sub_set_status_uses_chatenv_and_masks_output(tmp_path, monkeypatch):
     status = runner.invoke(main, ["sub", "status"])
     assert status.exit_code == 0, status.output
     assert "subscription_url: present" in status.output
-    assert "proxy_auth: present" in status.output
+    assert "proxy_auth: <not set>" in status.output
     assert "secret-token" not in status.output
     assert "secret-pass" not in status.output
+
+    auth_set = runner.invoke(main, ["init", "--proxy-auth-env", "CLASH_PROXY_AUTH", "-I"])
+    assert auth_set.exit_code == 0, auth_set.output
+    assert "secret-pass" not in auth_set.output
+    auth_show = runner.invoke(main, ["proxy", "show"])
+    assert auth_show.exit_code == 0, auth_show.output
+    assert "auth_present: yes" in auth_show.output
+    assert "auth_user: user" in auth_show.output
+    assert "proxy_auth: user:***" in auth_show.output
+    assert "secret-pass" not in auth_show.output
+    auth_plain = runner.invoke(main, ["proxy", "show", "--no-mask"])
+    assert auth_plain.exit_code == 0, auth_plain.output
+    assert "proxy_auth: user:secret-pass" in auth_plain.output
 
     env_text = (arch_home / "envs" / "chatclash" / ".env").read_text(encoding="utf-8")
     assert "CHATCLASH_SUBSCRIPTION_URL" in env_text
@@ -222,8 +259,8 @@ def test_sub_generate_writes_config_and_backup(tmp_path, monkeypatch):
     output.write_text("old: config\n", encoding="utf-8")
     output.chmod(0o644)
     runner = CliRunner()
-    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
-    set_result = runner.invoke(main, ["sub", "set", "--proxy-auth", "user:secret-pass", "-I"])
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+    set_result = runner.invoke(main, ["init", "--subscription-url", "https://subscribe.example.test/secret-token", "--proxy-auth", "user:secret-pass", "-I"])
     assert set_result.exit_code == 0, set_result.output
     try:
         result = runner.invoke(
@@ -267,7 +304,7 @@ def test_sub_update_fetches_direct_yaml_preserves_auth_and_writes_backup(tmp_pat
     server, thread = _serve(_ClashYamlHandler)
     runner = CliRunner()
     try:
-        assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+        assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
         set_result = runner.invoke(
             main,
             [
@@ -275,12 +312,22 @@ def test_sub_update_fetches_direct_yaml_preserves_auth_and_writes_backup(tmp_pat
                 "set",
                 "--subscription-url",
                 f"http://127.0.0.1:{server.server_port}/clash.yaml",
+                "-I",
+            ],
+        )
+        assert set_result.exit_code == 0, set_result.output
+        auth_result = runner.invoke(
+            main,
+            [
+                "init",
+                "--subscription-url",
+                f"http://127.0.0.1:{server.server_port}/clash.yaml",
                 "--proxy-auth",
                 "user:secret-pass",
                 "-I",
             ],
         )
-        assert set_result.exit_code == 0, set_result.output
+        assert auth_result.exit_code == 0, auth_result.output
         update = runner.invoke(main, ["sub", "update", "--no-validate"])
     finally:
         server.shutdown()
@@ -296,20 +343,146 @@ def test_sub_update_fetches_direct_yaml_preserves_auth_and_writes_backup(tmp_pat
     assert list((home / "clash" / "backups").glob("config.yaml.*.bak"))
 
 
-def test_check_and_mihomo_dry_run_paths(tmp_path, monkeypatch):
+def test_sub_converter_dry_run_lifecycle_uses_default_and_overridden_host_port(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     home = tmp_path / "chatclash-home"
     runner = CliRunner()
-    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
 
-    proxy = runner.invoke(main, ["check", "proxy", "--dry-run"])
-    assert proxy.exit_code == 0, proxy.output
-    assert "success_count:" in proxy.output
-    assert "dry-run only" in proxy.output
+    install = runner.invoke(main, ["sub", "converter", "install", "--dry-run", "-I"])
+    assert install.exit_code == 0, install.output
+    assert str(home / "bin" / "subconverter") in install.output
+    assert "dry-run only" in install.output
 
-    ip = runner.invoke(main, ["check", "ip", "--dry-run"])
-    assert ip.exit_code == 0, ip.output
-    assert "ip-api.com" in ip.output
+    start_default = runner.invoke(main, ["sub", "converter", "start", "--dry-run", "-I"])
+    assert start_default.exit_code == 0, start_default.output
+    assert "host: 127.0.0.1" in start_default.output
+    assert "port: 25500" in start_default.output
+    assert f"url: http://127.0.0.1:25500" in start_default.output
+    assert str(home / "run" / "subconverter.pid") in start_default.output
+    assert str(home / "logs" / "subconverter.log") in start_default.output
+
+    start_custom = runner.invoke(main, ["sub", "converter", "start", "--host", "0.0.0.0", "--port", "26666", "--dry-run", "-I"])
+    assert start_custom.exit_code == 0, start_custom.output
+    assert "host: 0.0.0.0" in start_custom.output
+    assert "port: 26666" in start_custom.output
+    assert "url: http://0.0.0.0:26666" in start_custom.output
+
+    status = runner.invoke(main, ["sub", "converter", "status", "-I"])
+    assert status.exit_code == 0, status.output
+    assert "running: no" in status.output
+    assert "host: 127.0.0.1" in status.output
+    assert "port: 25500" in status.output
+
+    for command in ("stop", "logs"):
+        result = runner.invoke(main, ["sub", "converter", command, "--dry-run", "-I"])
+        assert result.exit_code == 0, result.output
+        assert "dry-run only" in result.output
+
+
+def test_sub_converter_install_rejects_tar_path_traversal(tmp_path, monkeypatch):
+    import io
+    import tarfile
+
+    _clean_env(monkeypatch, tmp_path)
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+
+    archive = tmp_path / "evil.tar.gz"
+    payload = b"bad"
+    with tarfile.open(archive, "w:gz") as tar:
+        info = tarfile.TarInfo("../../evil")
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+
+    result = runner.invoke(main, ["sub", "converter", "install", "--source", str(archive), "-I"])
+    assert result.exit_code != 0
+    assert "unsafe archive member" in result.output
+    assert not (tmp_path.parent / "evil").exists()
+
+
+def test_sub_converter_install_rejects_zip_path_traversal(tmp_path, monkeypatch):
+    import zipfile
+
+    _clean_env(monkeypatch, tmp_path)
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+
+    archive = tmp_path / "evil.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("../evil", "bad")
+
+    result = runner.invoke(main, ["sub", "converter", "install", "--source", str(archive), "-I"])
+    assert result.exit_code != 0
+    assert "unsafe archive member" in result.output
+    assert not (tmp_path.parent / "evil").exists()
+
+
+def test_sub_converter_install_extracts_tar_gz_source(tmp_path, monkeypatch):
+    import tarfile
+
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+
+    payload_dir = tmp_path / "payload"
+    payload_dir.mkdir()
+    binary = payload_dir / "subconverter"
+    binary.write_text("#!/bin/sh\necho extracted-converter\n", encoding="utf-8")
+    binary.chmod(0o755)
+    archive = tmp_path / "subconverter_linux64.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(binary, arcname="subconverter/subconverter")
+
+    result = runner.invoke(main, ["sub", "converter", "install", "--source", str(archive), "-I"])
+    assert result.exit_code == 0, result.output
+    target = home / "bin" / "subconverter"
+    assert target.exists()
+    assert target.read_text(encoding="utf-8").startswith("#!/bin/sh")
+    assert target.stat().st_mode & 0o111
+
+
+def test_sub_converter_install_source_start_status_stop_with_fake_binary(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+
+    fake = tmp_path / "fake-subconverter"
+    fake.write_text("#!/bin/sh\necho converter-ready\nsleep 30\n", encoding="utf-8")
+    fake.chmod(0o755)
+
+    install = runner.invoke(main, ["sub", "converter", "install", "--source", str(fake), "-I"])
+    assert install.exit_code == 0, install.output
+    target = home / "bin" / "subconverter"
+    assert target.exists()
+    assert target.stat().st_mode & 0o111
+
+    start = runner.invoke(main, ["sub", "converter", "start", "--host", "127.0.0.1", "--port", "26666", "-I"])
+    assert start.exit_code == 0, start.output
+    assert "started" in start.output
+    pref = home / "subconverter" / "pref.ini"
+    assert "listen=127.0.0.1" in pref.read_text(encoding="utf-8")
+    assert "port=26666" in pref.read_text(encoding="utf-8")
+
+    status = runner.invoke(main, ["sub", "converter", "status", "-I"])
+    assert status.exit_code == 0, status.output
+    assert "running: yes" in status.output
+    assert "host: 127.0.0.1" in status.output
+    assert "port: 26666" in status.output
+
+    stop = runner.invoke(main, ["sub", "converter", "stop", "-I"])
+    assert stop.exit_code == 0, stop.output
+    assert "stopped" in stop.output
+    assert not (home / "run" / "subconverter.pid").exists()
+
+
+def test_mihomo_dry_run_paths(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
 
     install = runner.invoke(main, ["mihomo", "install", "--daemon", "--dry-run"])
     assert install.exit_code == 0, install.output
@@ -321,10 +494,48 @@ def test_check_and_mihomo_dry_run_paths(tmp_path, monkeypatch):
         assert "dry-run only" in result.output
 
 
+def test_all_public_commands_expose_shared_interactive_option():
+    runner = CliRunner()
+    commands = [
+        [],
+        ["sub"],
+        ["proxy"],
+        ["mihomo"],
+        ["init"],
+        ["status"],
+        ["sub", "set"],
+        ["sub", "status"],
+        ["sub", "update"],
+        ["sub", "url"],
+        ["sub", "generate"],
+        ["sub", "converter"],
+        ["sub", "converter", "install"],
+        ["sub", "converter", "start"],
+        ["sub", "converter", "stop"],
+        ["sub", "converter", "status"],
+        ["sub", "converter", "logs"],
+        ["proxy", "show"],
+        ["proxy", "env"],
+        ["mihomo", "install"],
+        ["mihomo", "uninstall"],
+        ["mihomo", "update"],
+        ["mihomo", "start"],
+        ["mihomo", "stop"],
+        ["mihomo", "restart"],
+        ["mihomo", "status"],
+        ["mihomo", "logs"],
+    ]
+
+    for command in commands:
+        result = runner.invoke(main, [*command, "--help"])
+        assert result.exit_code == 0, " ".join(command) + "\n" + result.output
+        assert "-i, --interactive / -I, --no-interactive" in result.output, " ".join(command)
+
+
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.1" in result.output
+    assert "0.1.2" in result.output
 
 
 
@@ -332,7 +543,7 @@ def test_init_home_option_writes_config_under_requested_home(tmp_path, monkeypat
     _clean_env(monkeypatch, tmp_path)
     explicit_home = tmp_path / "explicit-home"
     default_home = tmp_path / "chatclash-home"
-    result = CliRunner().invoke(main, ["init", "--home", str(explicit_home), "-y"])
+    result = CliRunner().invoke(main, ["init", "--home", str(explicit_home), "--local-only", "-I", "-y"])
 
     assert result.exit_code == 0, result.output
     assert (explicit_home / "config.yaml").exists()
@@ -348,7 +559,7 @@ def test_secret_bearing_runtime_config_and_backups_are_private(tmp_path, monkeyp
     server, thread = _serve(_ClashYamlHandler)
     runner = CliRunner()
     try:
-        assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+        assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
         first = runner.invoke(
             main,
             [
@@ -356,8 +567,6 @@ def test_secret_bearing_runtime_config_and_backups_are_private(tmp_path, monkeyp
                 "set",
                 "--subscription-url",
                 f"http://127.0.0.1:{server.server_port}/clash.yaml",
-                "--proxy-auth",
-                "user:secret-pass",
                 "-I",
             ],
         )
@@ -388,7 +597,7 @@ def test_mihomo_logs_redact_configured_operator_secrets(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     home = tmp_path / "chatclash-home"
     runner = CliRunner()
-    assert runner.invoke(main, ["init", "-y"]).exit_code == 0
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
     set_result = runner.invoke(
         main,
         [
@@ -396,12 +605,12 @@ def test_mihomo_logs_redact_configured_operator_secrets(tmp_path, monkeypatch):
             "set",
             "--subscription-url",
             "https://subscribe.example.test/secret-token",
-            "--proxy-auth",
-            "user:secret-pass",
             "-I",
         ],
     )
     assert set_result.exit_code == 0, set_result.output
+    auth_result = runner.invoke(main, ["init", "--subscription-url", "https://subscribe.example.test/secret-token", "--proxy-auth", "user:secret-pass", "-I"])
+    assert auth_result.exit_code == 0, auth_result.output
     log_file = home / "logs" / "mihomo.log"
     log_file.write_text("url=https://subscribe.example.test/secret-token auth=user:secret-pass\n", encoding="utf-8")
     monkeypatch.setattr("chatclash.mihomo.daemon_unit_path", lambda: home / "run" / "missing.service")
@@ -411,3 +620,108 @@ def test_mihomo_logs_redact_configured_operator_secrets(tmp_path, monkeypatch):
     assert "secret-token" not in logs.output
     assert "secret-pass" not in logs.output
     assert "subscribe.example.test" in logs.output
+
+
+
+def test_init_interactive_flags_are_respected(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    runner = CliRunner()
+
+    forced = runner.invoke(main, ["init", "-i"])
+    assert forced.exit_code != 0
+    assert "Interactive mode was requested" in forced.output
+
+    missing = runner.invoke(main, ["init", "-I"])
+    assert missing.exit_code != 0
+    assert "Missing subscription URL" in missing.output
+    assert not (tmp_path / "chatclash-home" / "config.yaml").exists()
+
+    configured = runner.invoke(
+        main,
+        [
+            "init",
+            "--subscription-url",
+            "https://subscribe.example.test/secret-token",
+            "--proxy-auth",
+            "user:secret-pass",
+            "-I",
+        ],
+    )
+    assert configured.exit_code == 0, configured.output
+    assert (tmp_path / "chatclash-home" / "config.yaml").exists()
+    assert "secret-token" not in configured.output
+    assert "secret-pass" not in configured.output
+    env_text = (tmp_path / "chatarch-home" / "envs" / "chatclash" / ".env").read_text(encoding="utf-8")
+    assert "CHATCLASH_SUBSCRIPTION_URL" in env_text
+    assert "CHATCLASH_PROXY_AUTH" in env_text
+
+
+def test_init_reuses_existing_chatenv_values_without_input_aliases(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    runner = CliRunner()
+    seed = runner.invoke(
+        main,
+        [
+            "sub",
+            "set",
+            "--subscription-url",
+            "https://subscribe.example.test/secret-token",
+            "-I",
+        ],
+    )
+    assert seed.exit_code == 0, seed.output
+    auth = runner.invoke(main, ["init", "--subscription-url", "https://subscribe.example.test/secret-token", "--proxy-auth", "user:secret-pass", "-I"])
+    assert auth.exit_code == 0, auth.output
+
+    init = runner.invoke(main, ["init", "-I"])
+    assert init.exit_code == 0, init.output
+    assert "chat_env_updated:" in init.output
+    assert "secret-token" not in init.output
+    assert "secret-pass" not in init.output
+
+
+def test_chatenv_cat_can_read_chatclash_active_profile(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    from chatenv.cli import cli as chatenv_cli
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "sub",
+            "set",
+            "--subscription-url",
+            "https://subscribe.example.test/secret-token",
+            "--subconverter-url",
+            "http://127.0.0.1:25500",
+            "-I",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    auth_result = CliRunner().invoke(main, ["init", "--subscription-url", "https://subscribe.example.test/secret-token", "--proxy-auth", "user:secret-pass", "-I"])
+    assert auth_result.exit_code == 0, auth_result.output
+
+    cat = CliRunner().invoke(chatenv_cli, ["--home", str(tmp_path / "chatarch-home"), "cat", "-t", "chatclash"])
+    assert cat.exit_code == 0, cat.output
+    assert "CHATCLASH_SUBSCRIPTION_URL" in cat.output
+    assert "CHATCLASH_PROXY_AUTH" in cat.output
+    assert "secret-token" not in cat.output
+    assert "secret-pass" not in cat.output
+
+
+def test_chatenv_test_invokes_chatclash_proxy_check(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    from types import SimpleNamespace
+    from chatenv.cli import cli as chatenv_cli
+
+    calls = []
+
+    def fake_check_proxy(*, min_success=2, timeout=30, urls=None, dry_run=False):
+        calls.append({"min_success": min_success, "timeout": timeout, "urls": urls, "dry_run": dry_run})
+        return SimpleNamespace(success_count=1)
+
+    monkeypatch.setattr("chatclash.checks.check_proxy", fake_check_proxy)
+    result = CliRunner().invoke(chatenv_cli, ["--home", str(tmp_path / "chatarch-home"), "test", "-t", "chatclash", "-I"])
+
+    assert result.exit_code == 0, result.output
+    assert calls == [{"min_success": 1, "timeout": 10, "urls": None, "dry_run": False}]
+    assert "OK proxy success_count=1" in result.output

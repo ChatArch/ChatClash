@@ -2,58 +2,70 @@
     <a href="https://pypi.python.org/pypi/chatclash">
         <img src="https://img.shields.io/pypi/v/chatclash.svg" alt="PyPI version" />
     </a>
-    <a href="https://github.com/OWNER/REPO/actions/workflows/ci.yml">
-        <img src="https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg" alt="Tests" />
-    </a>
-    <a href="https://OWNER.github.io/REPO">
-        <img src="https://img.shields.io/badge/docs-mkdocs-blue.svg" alt="Documentation" />
-    </a>
-</div>
-
-<div align="center">
-
-[English](README.en.md) | [简体中文](README.md)
 </div>
 
 # chatclash
 
-ChatArch proxy toolkit for Clash, subconverter, and proxy service operations.
+ChatArch single-machine proxy toolkit for Mihomo runtime management, subscription-backed config generation, and local proxy checks.
 
 ## Quick Start
 
 ```bash
 pip install -e ".[dev]"
-chatclash setup clash /tmp/clash --dry-run
-chatclash setup clash /tmp/clash -y
-chatclash status /tmp/clash
-chatclash proxy env
-python -m pytest -q
+chatclash init
+chatclash sub set -i
+chatclash mihomo install --daemon
+chatclash sub update
+chatclash mihomo start
+chatclash status
+chatclash check proxy
+chatclash check ip
 ```
 
-If you already have a subconverter service:
+## CLI tree
+
+```text
+chatclash
+├── init
+├── status
+├── sub
+│   ├── set
+│   ├── status
+│   ├── update
+│   ├── url
+│   └── generate
+├── proxy
+│   ├── set
+│   ├── show
+│   └── env
+├── mihomo
+│   ├── install
+│   ├── uninstall
+│   ├── update
+│   ├── start
+│   ├── stop
+│   ├── restart
+│   ├── status
+│   └── logs
+└── check
+    ├── proxy
+    └── ip
+```
+
+## Common commands
 
 ```bash
 chatclash sub status
 chatclash sub url "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500
-chatclash sub generate "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500 -o /tmp/clash/config.yaml -y
+chatclash sub generate "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500 -o <OUTPUT_CONFIG> -y
+chatclash proxy show
+eval "$(chatclash proxy env)"
+python -m pytest -q
 ```
 
-## CLI Contract
+## ChatArch conventions
 
-This template depends on `chatstyle>=0.1.0` and `chatenv>=0.1.1`. New commands should prefer:
-
-- `CommandSchema` / `CommandField` for inputs.
-- `add_interactive_option()` for the shared `-i/-I` switch.
-- `resolve_command_inputs()` for missing args, defaults, TTY behavior, and validation.
-
-## Layout
-
-- `src/`: package source code
-- `tests/code-tests/`: code tests and migrated historical tests
-- `tests/cli-tests/`: real CLI tests, doc-first
-- `tests/mock-cli-tests/`: mock/fake CLI tests, doc-first
-- `docs/`: long-lived project docs built by mkdocs
-
-## Development Notes
-
-See `DEVELOP.md` and `AGENTS.md` before expanding the scaffold.
+- CLI interaction uses ChatStyle helpers and the shared `-i/-I` pattern where applicable.
+- Operator config is stored through ChatEnv; local config stores only machine-local runtime facts.
+- Major CLI capabilities have reusable Python APIs under `src/chatclash/` modules.
+- Sensitive values must not be printed in CLI output, logs, docs, or tests.

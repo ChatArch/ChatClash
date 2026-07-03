@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
 - Refine the command tree to `init`, `status`, `sub`, `proxy`, `mihomo`, and `check`.
 - Split CLI behavior into reusable Python API modules for subscription, proxy, Mihomo runtime, checks, status, and local paths.

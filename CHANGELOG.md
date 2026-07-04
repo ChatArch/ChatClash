@@ -1,8 +1,18 @@
 # Changelog
 
+## 0.1.2
+
+- Require the latest ChatEnv 0.2 line and tighten runtime dependency windows.
+- Make ChatClash visible through ChatEnv provider commands such as `chatenv cat -t chatclash`.
+- Make `chatenv test -t chatclash` validate the current proxy via ChatClash proxy checks, without keeping a separate public `chatclash check` CLI surface.
+- Keep `proxy` read-only: print masked endpoints and shell env; configuration stays in `init`/ChatEnv.
+- Add `sub converter install/start/stop/status/logs` for the local subscription converter service with default `127.0.0.1:25500` and `--host/--port` overrides.
+- Route all public commands through the shared ChatStyle `-i/-I` interactive option.
+- Wire `chatclash init` into the shared `-i/-I` interactive mode pattern.
+
 ## 0.1.1
 
-- Refine the command tree to `init`, `status`, `sub`, `proxy`, `mihomo`, and `check`.
+- Refine the command tree to `init`, `status`, `sub`, `proxy`, and `mihomo`.
 - Split CLI behavior into reusable Python API modules for subscription, proxy, Mihomo runtime, checks, status, and local paths.
 - Keep sensitive subscription URLs and proxy authentication masked in command output.
 - Default to a lightweight Mihomo binary backend for the single-machine flow.

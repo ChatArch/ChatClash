@@ -13,12 +13,12 @@
 2. Update `CHANGELOG.md`.
 3. Run tests and build.
 4. Commit with a release message.
-5. Tag the release, for example `v0.1.1`.
+5. Tag the release, for example `v0.1.2`.
 6. Push branch and tag:
 
 ```bash
 git push origin master
-git push origin v0.1.1
+git push origin v0.1.2
 ```
 
 If you are releasing the current stable line without bumping code version, tag the exact release commit as `v0.1.0` first and let the tag-triggered workflow publish from that ref.

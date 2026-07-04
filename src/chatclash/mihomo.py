@@ -190,4 +190,4 @@ def read_mihomo_logs(*, tail: int = 100, dry_run: bool = False) -> CommandResult
     else:
         text = "<no logs>"
     op = read_operator_config()
-    return CommandResult(action="logs", lines=[redact_text(text, op.subscription_url, op.proxy_auth, op.subconverter_url, op.subscription_fetch_proxy)])
+    return CommandResult(action="logs", lines=[redact_text(text, op.subscription_url, op.proxy_auth, op.subconverter_url)])

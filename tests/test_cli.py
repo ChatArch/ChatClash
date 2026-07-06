@@ -65,8 +65,8 @@ def test_cli_tree_is_concise_and_old_commands_removed():
 
     expected_groups = {
         "sub": {"set", "status", "update", "url", "generate", "converter"},
-        "proxy": {"show", "env"},
-        "mihomo": {"install", "uninstall", "update", "start", "stop", "restart", "status", "logs"},
+        "proxy": {"show", "env", "set", "validate"},
+        "mihomo": {"install", "uninstall", "update", "start", "stop", "restart", "reload", "status", "logs"},
     }
     for group, commands in expected_groups.items():
         help_result = runner.invoke(main, [group, "--help"])
@@ -142,6 +142,61 @@ def test_init_status_proxy_show_and_env_use_machine_local_config(tmp_path, monke
     assert "mihomo_installed: no" in status.output
     assert "subscription_set: yes" in status.output
     assert "http_proxy: http://127.0.0.1:7890" in status.output
+
+
+def test_proxy_set_rerenders_active_config_and_runtime_commands_are_explicit(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    init = runner.invoke(main, ["init", "--local-only", "-I", "-y"])
+    assert init.exit_code == 0, init.output
+
+    result = runner.invoke(
+        main,
+        [
+            "proxy",
+            "set",
+            "--http-port",
+            "18080",
+            "--socks-port",
+            "18081",
+            "--controller-port",
+            "19090",
+            "--bind-host",
+            "127.0.0.1",
+            "--proxy-host",
+            "10.0.0.5",
+            "-I",
+            "-y",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "updated: http_port, socks_port, controller_port, bind_host, proxy_host" in result.output
+    assert "chatclash mihomo restart" in result.output
+
+    local = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
+    assert local["http_port"] == 18080
+    assert local["socks_port"] == 18081
+    assert local["controller_port"] == 19090
+    assert local["bind_host"] == "127.0.0.1"
+    assert local["proxy_host"] == "10.0.0.5"
+
+    active = yaml.safe_load((home / "clash" / "config.yaml").read_text(encoding="utf-8"))
+    assert active["port"] == 18080
+    assert active["socks-port"] == 18081
+    assert active["bind-address"] == "127.0.0.1"
+    assert active["external-controller"] == ":19090"
+    assert active["rules"] == ["MATCH,DIRECT"]
+
+    validate = runner.invoke(main, ["proxy", "validate", "--dry-run"])
+    assert validate.exit_code == 0, validate.output
+    assert "validate:" in validate.output
+    assert "dry-run only" in validate.output
+
+    reload_result = runner.invoke(main, ["mihomo", "reload", "--dry-run"])
+    assert reload_result.exit_code == 0, reload_result.output
+    assert "controller: http://127.0.0.1:19090/configs" in reload_result.output
+    assert "PUT /configs" in reload_result.output
 
 
 def test_sub_set_status_uses_chatenv_and_masks_output(tmp_path, monkeypatch):
@@ -688,12 +743,15 @@ def test_all_public_commands_expose_shared_interactive_option():
         ["sub", "converter", "logs"],
         ["proxy", "show"],
         ["proxy", "env"],
+        ["proxy", "set"],
+        ["proxy", "validate"],
         ["mihomo", "install"],
         ["mihomo", "uninstall"],
         ["mihomo", "update"],
         ["mihomo", "start"],
         ["mihomo", "stop"],
         ["mihomo", "restart"],
+        ["mihomo", "reload"],
         ["mihomo", "status"],
         ["mihomo", "logs"],
     ]
@@ -707,7 +765,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.3" in result.output
+    assert "0.1.4" in result.output
 
 
 

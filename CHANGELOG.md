@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.4
+
+- Add `chatclash proxy set` to update local HTTP/SOCKS/controller port and host settings, then re-render the active config header without restarting Mihomo.
+- Add `chatclash proxy validate` for explicit active config validation via `mihomo -t`.
+- Add `chatclash mihomo reload` as a system-level hot reload for the current active config through the Mihomo controller.
+
 ## 0.1.3
 
 - Make SubConverter-backed generation use the documented ACL4SSR parameters (`insert=false`, `new_name=true`, and related flags) instead of the minimal `/sub` query.

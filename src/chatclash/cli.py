@@ -21,19 +21,22 @@ from .chatenv_store import read_operator_config
 from .mihomo import (
     install_mihomo,
     read_mihomo_logs,
+    reload_mihomo,
     restart_mihomo,
     start_mihomo,
     stop_mihomo,
     uninstall_mihomo,
+    validate_mihomo_config,
     get_mihomo_status,
 )
-from .paths import initialize_home
-from .proxy import get_proxy_endpoints, get_proxy_env, proxy_auth_status, set_proxy_auth
+from .paths import initialize_home, read_local_config
+from .proxy import get_proxy_endpoints, get_proxy_env, proxy_auth_status, set_proxy_auth, set_proxy_config
 from .status import get_status
 from .subscription import (
     build_subscription_url,
     generate_subscription_config,
     get_subscription_status,
+    render_active_config_from_local,
     set_subscription_config,
     update_subscription_config,
 )
@@ -472,6 +475,89 @@ def proxy_env(no_mask: bool, interactive: bool | None) -> None:
         click.echo(f"export {key}={value}")
 
 
+@proxy_group.command(name="set")
+@click.option("--http-port", "http_port_value", type=int, default=None)
+@click.option("--socks-port", "socks_port_value", type=int, default=None)
+@click.option("--controller-port", "controller_port_value", type=int, default=None)
+@click.option("--bind-host", default=None)
+@click.option("--proxy-host", "proxy_host_value", default=None)
+@click.option("--dry-run", is_flag=True)
+@click.option("-y", "--yes", is_flag=True, help="Accepted for write-confirmation consistency.")
+@add_interactive_option
+def proxy_set(
+    http_port_value: int | None,
+    socks_port_value: int | None,
+    controller_port_value: int | None,
+    bind_host: str | None,
+    proxy_host_value: str | None,
+    dry_run: bool,
+    yes: bool,
+    interactive: bool | None,
+) -> None:
+    """Update local proxy listener settings and re-render active config."""
+    changed: list[str] = []
+    render_result: dict[str, object] = {}
+    _ = yes
+    try:
+        config = read_local_config()
+        if interactive is True:
+            http_port_value = click.prompt("HTTP port", type=int, default=http_port_value or int(config.get("http_port") or 7890))
+            socks_port_value = click.prompt("SOCKS port", type=int, default=socks_port_value or int(config.get("socks_port") or 7891))
+            controller_port_value = click.prompt("Controller port", type=int, default=controller_port_value or int(config.get("controller_port") or 9090))
+            bind_host = click.prompt("Bind host", default=bind_host or str(config.get("bind_host") or "0.0.0.0"))
+            proxy_host_value = click.prompt("Proxy host", default=proxy_host_value or str(config.get("proxy_host") or "127.0.0.1"))
+        else:
+            _resolve_no_input_interactive(interactive)
+        provided = {
+            "http_port": http_port_value,
+            "socks_port": socks_port_value,
+            "controller_port": controller_port_value,
+            "bind_host": bind_host,
+            "proxy_host": proxy_host_value,
+        }
+        changed = [key for key, value in provided.items() if value is not None and config.get(key) != value]
+        if dry_run:
+            render_result = render_active_config_from_local(dry_run=True)
+        else:
+            changed = set_proxy_config(
+                http_port_value=http_port_value,
+                socks_port_value=socks_port_value,
+                controller_port_value=controller_port_value,
+                bind_host=bind_host,
+                proxy_host_value=proxy_host_value,
+            )
+            render_result = render_active_config_from_local(dry_run=False) if changed else {"target": str(read_local_config().get("clash_dir")), "dry_run": False}
+    except Exception as exc:
+        _fail(exc)
+    click.echo("updated: " + (", ".join(changed) if changed else "<none>"))
+    if changed or dry_run:
+        click.echo(f"active_config: {render_result['target']}")
+    if dry_run:
+        render_success("dry-run only; no files changed")
+    elif changed:
+        render_success("proxy config updated; run `chatclash proxy validate` then `chatclash mihomo restart` to apply to the running service")
+
+
+@proxy_group.command(name="validate")
+@click.option("--dry-run", is_flag=True)
+@add_interactive_option
+def proxy_validate(dry_run: bool, interactive: bool | None) -> None:
+    """Validate the current active Mihomo config."""
+    result = None
+    try:
+        _resolve_no_input_interactive(interactive)
+        result = validate_mihomo_config(dry_run=dry_run)
+    except Exception as exc:
+        _fail(exc)
+    if result is None:  # pragma: no cover - defensive for type checkers
+        return
+    _echo_lines(result.lines)
+    if dry_run:
+        render_success("dry-run only; no validation command ran")
+    else:
+        render_success("proxy config validation complete")
+
+
 
 
 @main.group(name="mihomo")
@@ -570,6 +656,26 @@ def mihomo_restart(dry_run: bool, interactive: bool | None) -> None:
     _echo_lines(result.lines)
     if result.dry_run:
         render_success("dry-run only; no files changed")
+
+
+@mihomo_group.command(name="reload")
+@click.option("--dry-run", is_flag=True)
+@add_interactive_option
+def mihomo_reload(dry_run: bool, interactive: bool | None) -> None:
+    """Hot-reload the current active config through Mihomo's controller."""
+    result = None
+    try:
+        _resolve_no_input_interactive(interactive)
+        result = reload_mihomo(dry_run=dry_run)
+    except Exception as exc:
+        _fail(exc)
+    if result is None:  # pragma: no cover - defensive for type checkers
+        return
+    _echo_lines(result.lines)
+    if dry_run:
+        render_success("dry-run only; no reload request sent")
+    else:
+        render_success("mihomo reload complete")
 
 
 @mihomo_group.command(name="status")

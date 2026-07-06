@@ -540,10 +540,12 @@ def proxy_set(
 
 @proxy_group.command(name="validate")
 @click.option("--dry-run", is_flag=True)
-def proxy_validate(dry_run: bool) -> None:
+@add_interactive_option
+def proxy_validate(dry_run: bool, interactive: bool | None) -> None:
     """Validate the current active Mihomo config."""
     result = None
     try:
+        _resolve_no_input_interactive(interactive)
         result = validate_mihomo_config(dry_run=dry_run)
     except Exception as exc:
         _fail(exc)
@@ -658,10 +660,12 @@ def mihomo_restart(dry_run: bool, interactive: bool | None) -> None:
 
 @mihomo_group.command(name="reload")
 @click.option("--dry-run", is_flag=True)
-def mihomo_reload(dry_run: bool) -> None:
+@add_interactive_option
+def mihomo_reload(dry_run: bool, interactive: bool | None) -> None:
     """Hot-reload the current active config through Mihomo's controller."""
     result = None
     try:
+        _resolve_no_input_interactive(interactive)
         result = reload_mihomo(dry_run=dry_run)
     except Exception as exc:
         _fail(exc)

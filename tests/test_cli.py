@@ -743,12 +743,15 @@ def test_all_public_commands_expose_shared_interactive_option():
         ["sub", "converter", "logs"],
         ["proxy", "show"],
         ["proxy", "env"],
+        ["proxy", "set"],
+        ["proxy", "validate"],
         ["mihomo", "install"],
         ["mihomo", "uninstall"],
         ["mihomo", "update"],
         ["mihomo", "start"],
         ["mihomo", "stop"],
         ["mihomo", "restart"],
+        ["mihomo", "reload"],
         ["mihomo", "status"],
         ["mihomo", "logs"],
     ]
@@ -762,7 +765,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.3" in result.output
+    assert "0.1.4" in result.output
 
 
 

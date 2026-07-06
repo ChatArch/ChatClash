@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -243,6 +244,61 @@ class _SubconverterHandler(_ClashYamlHandler):
     pass
 
 
+class _ProxiesOnlySubconverterHandler(BaseHTTPRequestHandler):
+    seen_query = {}
+
+    def do_GET(self):  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        type(self).seen_query = urllib.parse.parse_qs(parsed.query)
+        body = """\
+proxies:
+  - name: node-a
+    type: http
+    server: 127.0.0.1
+    port: 8080
+  - name: node-b
+    type: http
+    server: 127.0.0.2
+    port: 8081
+"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/yaml; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+    def log_message(self, format, *args):  # noqa: A002
+        return
+
+
+class _LegacyProxySubconverterHandler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        body = """\
+Proxy:
+  - name: legacy-node
+    type: http
+    server: 127.0.0.3
+    port: 8082
+"""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/yaml; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(body.encode("utf-8"))
+
+    def log_message(self, format, *args):  # noqa: A002
+        return
+
+
+class _EmptySubconverterHandler(BaseHTTPRequestHandler):
+    def do_GET(self):  # noqa: N802
+        self.send_response(200)
+        self.send_header("Content-Type", "text/yaml; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"proxies: []\n")
+
+    def log_message(self, format, *args):  # noqa: A002
+        return
+
+
 def _serve(handler):
     server = HTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -296,6 +352,116 @@ def test_sub_generate_writes_config_and_backup(tmp_path, monkeypatch):
     for backup in backups:
         assert stat.S_IMODE(backup.stat().st_mode) == 0o600
     assert _SubconverterHandler.seen_path.startswith("/sub?")
+
+
+def test_sub_generate_uses_documented_subconverter_params_and_composes_groups(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    server, thread = _serve(_ProxiesOnlySubconverterHandler)
+    output = tmp_path / "config.yaml"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+    set_result = runner.invoke(main, ["init", "--subscription-url", "https://subscribe.example.test/secret-token", "--proxy-auth", "user:secret-pass", "-I"])
+    assert set_result.exit_code == 0, set_result.output
+    try:
+        result = runner.invoke(
+            main,
+            [
+                "sub",
+                "generate",
+                "https://subscribe.example.test/secret-token",
+                "-s",
+                f"http://127.0.0.1:{server.server_port}",
+                "-o",
+                str(output),
+                "-y",
+                "-I",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert result.exit_code == 0, result.output
+    assert "proxies: 2" in result.output
+    query = _ProxiesOnlySubconverterHandler.seen_query
+    assert query["target"] == ["clash"]
+    assert query["insert"] == ["false"]
+    assert query["emoji"] == ["true"]
+    assert query["list"] == ["false"]
+    assert query["tfo"] == ["false"]
+    assert query["scv"] == ["false"]
+    assert query["fdn"] == ["false"]
+    assert query["sort"] == ["false"]
+    assert query["new_name"] == ["true"]
+    assert "ACL4SSR_Online.ini" in query["config"][0]
+    parsed = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert parsed["authentication"] == ["user:secret-pass"]
+    assert [p["name"] for p in parsed["proxies"]] == ["node-a", "node-b"]
+    assert [g["name"] for g in parsed["proxy-groups"]] == ["AUTO", "PROXY", "AI"]
+    assert parsed["proxy-groups"][0]["proxies"] == ["node-a", "node-b"]
+    assert "MATCH,PROXY" in parsed["rules"]
+
+
+def test_sub_generate_normalizes_legacy_subconverter_proxy_key(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    server, thread = _serve(_LegacyProxySubconverterHandler)
+    output = tmp_path / "config.yaml"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+    try:
+        result = runner.invoke(
+            main,
+            [
+                "sub",
+                "generate",
+                "https://subscribe.example.test/secret-token",
+                "-s",
+                f"http://127.0.0.1:{server.server_port}",
+                "-o",
+                str(output),
+                "-y",
+                "-I",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert result.exit_code == 0, result.output
+    parsed = yaml.safe_load(output.read_text(encoding="utf-8"))
+    assert "Proxy" not in parsed
+    assert parsed["proxies"][0]["name"] == "legacy-node"
+    assert parsed["proxy-groups"][0]["name"] == "AUTO"
+
+
+def test_sub_generate_rejects_zero_proxy_converter_output(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    server, thread = _serve(_EmptySubconverterHandler)
+    output = tmp_path / "config.yaml"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+    try:
+        result = runner.invoke(
+            main,
+            [
+                "sub",
+                "generate",
+                "https://subscribe.example.test/secret-token",
+                "-s",
+                f"http://127.0.0.1:{server.server_port}",
+                "-o",
+                str(output),
+                "-y",
+                "-I",
+            ],
+        )
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert result.exit_code != 0
+    assert "did not produce any usable proxies" in result.output
+    assert not output.exists()
 
 
 def test_sub_update_fetches_direct_yaml_preserves_auth_and_writes_backup(tmp_path, monkeypatch):

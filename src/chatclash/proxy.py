@@ -113,7 +113,7 @@ def set_proxy_config(
         "proxy_host": proxy_host_value,
     }
     for key, value in updates.items():
-        if value is not None:
+        if value is not None and config.get(key) != value:
             config[key] = value
             changed.append(key)
     if changed:

@@ -175,6 +175,50 @@ def _merge_config(remote_text: str, *, config: dict[str, Any], proxy_auth: str |
     return yaml.safe_dump(merged, sort_keys=False, allow_unicode=True)
 
 
+LOCAL_HEADER_KEYS = {
+    "port",
+    "socks-port",
+    "allow-lan",
+    "bind-address",
+    "mode",
+    "log-level",
+    "external-controller",
+    "authentication",
+}
+
+
+def render_active_config_from_local(*, dry_run: bool = False) -> dict[str, Any]:
+    """Refresh the active config header from machine-local ChatClash settings."""
+    config = read_local_config()
+    target = clash_dir(config) / "config.yaml"
+    if not target.exists():
+        raise ValueError(f"active config does not exist: {target}")
+    op = read_operator_config()
+    active = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    if not isinstance(active, dict):
+        raise ValueError("active config is not a Clash YAML object")
+    body = dict(active)
+    for key in LOCAL_HEADER_KEYS:
+        body.pop(key, None)
+    merged = _header(config, op.proxy_auth)
+    merged.update(_normalize_body(body))
+    merged.update(_header(config, op.proxy_auth))
+    rendered = yaml.safe_dump(merged, sort_keys=False, allow_unicode=True)
+    result = {
+        "target": str(target),
+        "dry_run": dry_run,
+        "proxies": len(merged.get("proxies") or []),
+        "proxy_groups": len(merged.get("proxy-groups") or []),
+        "rules": len(merged.get("rules") or []),
+    }
+    if dry_run:
+        return result
+    _backup(target)
+    target.write_text(rendered, encoding="utf-8")
+    target.chmod(0o600)
+    return result
+
+
 def _backup(path: Path) -> Path | None:
     if not path.exists():
         return None

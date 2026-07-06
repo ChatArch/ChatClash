@@ -29,7 +29,9 @@ chatclash                         # 管理本机 Mihomo 代理服务
 │   └── converter                 # 安装和管理本机 SubConverter 服务
 ├── proxy                         # 打印本机代理端点和环境变量
 │   ├── show                      # 显示代理端点，默认脱敏显示认证
-│   └── env                       # 输出 shell 代理环境变量；--no-mask 输出可用认证 URL
+│   ├── env                       # 输出 shell 代理环境变量；--no-mask 输出可用认证 URL
+│   ├── set                       # 修改本机代理端口/host，并重写 active config header
+│   └── validate                  # 校验当前 active Mihomo config
 └── mihomo                        # 管理 Mihomo 程序
     ├── install                   # 安装 Mihomo
     ├── uninstall                 # 卸载 Mihomo
@@ -37,6 +39,7 @@ chatclash                         # 管理本机 Mihomo 代理服务
     ├── start                     # 启动 Mihomo
     ├── stop                      # 停止 Mihomo
     ├── restart                   # 重启 Mihomo
+    ├── reload                    # 通过 controller 热加载当前 active config
     ├── status                    # 查看 Mihomo 状态
     └── logs                      # 查看 Mihomo 日志
 ```

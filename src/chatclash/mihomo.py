@@ -7,12 +7,15 @@ import json
 import platform
 import shutil
 import tempfile
+import urllib.error
 import urllib.request
 from pathlib import Path
 
+import yaml
+
 from .chatenv_store import read_operator_config
 from .models import CommandResult
-from .paths import clash_dir, engine_path, log_file, pid_file, read_local_config
+from .paths import clash_dir, controller_port, engine_path, log_file, pid_file, read_local_config
 from .utils import redact_text, run_shell
 
 UNIT_NAME = "chatclash-mihomo.service"
@@ -177,6 +180,47 @@ def restart_mihomo(*, dry_run: bool = False) -> CommandResult:
     stop_mihomo()
     start_mihomo()
     return CommandResult(action="restart_mihomo", lines=["restarted"])
+
+
+def validate_mihomo_config(*, dry_run: bool = False) -> CommandResult:
+    config = read_local_config()
+    target_dir = clash_dir(config)
+    target = target_dir / "config.yaml"
+    cmd = [str(engine_path(config)), "-t", "-d", str(target_dir)]
+    lines = [f"config: {target}", "validate: " + " ".join(cmd)]
+    if dry_run:
+        return CommandResult(action="validate_mihomo", dry_run=True, lines=lines)
+    if not target.exists():
+        raise RuntimeError(f"active config does not exist: {target}")
+    if not engine_path(config).exists():
+        raise RuntimeError(f"mihomo binary does not exist: {engine_path(config)}")
+    output = run_shell(cmd)
+    return CommandResult(action="validate_mihomo", lines=lines + [output.strip() or "validation passed"])
+
+
+def reload_mihomo(*, dry_run: bool = False) -> CommandResult:
+    config = read_local_config()
+    target = clash_dir(config) / "config.yaml"
+    url = f"http://127.0.0.1:{controller_port(config)}/configs"
+    lines = [f"config: {target}", f"controller: {url}"]
+    if dry_run:
+        return CommandResult(action="reload_mihomo", dry_run=True, lines=lines + ["PUT /configs"])
+    if not target.exists():
+        raise RuntimeError(f"active config does not exist: {target}")
+    active = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    secret = active.get("secret") if isinstance(active, dict) else None
+    payload = json.dumps({"path": str(target)}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if secret:
+        headers["Authorization"] = f"Bearer {secret}"
+    req = urllib.request.Request(url, data=payload, headers=headers, method="PUT")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            body = response.read().decode("utf-8", errors="replace").strip()
+            return CommandResult(action="reload_mihomo", lines=lines + [f"status: {response.status}", body or "reloaded"])
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"mihomo reload failed: HTTP {exc.code} {body}") from exc
 
 
 def read_mihomo_logs(*, tail: int = 100, dry_run: bool = False) -> CommandResult:

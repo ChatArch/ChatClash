@@ -40,13 +40,14 @@ chatclash                         # 管理本机 Mihomo 代理服务
 
 ChatEnv stores operator-owned values:
 
+- `CHATCLASH_HOME`
 - `CHATCLASH_SUBSCRIPTION_URL`
 - `CHATCLASH_PROXY_AUTH`
 - `CHATCLASH_SUBCONVERTER_URL`
 
 Machine-local config stores runtime layout and local listener facts:
 
-- home and runtime config directory
+- runtime config directory under `CHATCLASH_HOME`
 - Mihomo binary path
 - PID/log/cache paths
 - HTTP/SOCKS/controller ports

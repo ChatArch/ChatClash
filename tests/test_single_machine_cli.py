@@ -48,6 +48,7 @@ def test_chatenv_schema_has_operator_config_only():
     from chatclash.config import ChatClashConfig
 
     fields = {field.env_key: field for field in ChatClashConfig.get_fields().values()}
+    assert fields["CHATCLASH_HOME"].is_sensitive is False
     assert fields["CHATCLASH_SUBSCRIPTION_URL"].is_sensitive is True
     assert fields["CHATCLASH_PROXY_AUTH"].is_sensitive is True
     assert "CHATCLASH_SUBCONVERTER_URL" in fields

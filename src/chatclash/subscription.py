@@ -30,11 +30,13 @@ SUBCONVERTER_QUERY_DEFAULTS = {
 
 def set_subscription_config(
     *,
+    home: str | None = None,
     subscription_url: str | None = None,
     proxy_auth: str | None = None,
     subconverter_url: str | None = None,
 ) -> list[str]:
     return write_operator_config(
+        home=home,
         subscription_url=subscription_url,
         proxy_auth=proxy_auth,
         subconverter_url=subconverter_url,

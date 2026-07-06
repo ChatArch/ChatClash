@@ -113,6 +113,12 @@ def test_init_status_proxy_show_and_env_use_machine_local_config(tmp_path, monke
     assert "subscription_url" not in local
     assert "proxy_auth" not in local
 
+    env_text = (tmp_path / "chatarch-home" / "envs" / "chatclash" / ".env").read_text(encoding="utf-8")
+    assert "CHATCLASH_HOME" in env_text
+    assert str(home) in env_text
+    assert "CHATCLASH_SUBSCRIPTION_URL" in env_text
+    assert "CHATCLASH_PROXY_AUTH" in env_text
+
     show = runner.invoke(main, ["proxy", "show"])
     assert show.exit_code == 0, show.output
     assert "HTTP proxy: http://user:***@127.0.0.1:7890" in show.output
@@ -701,7 +707,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.2" in result.output
+    assert "0.1.3" in result.output
 
 
 

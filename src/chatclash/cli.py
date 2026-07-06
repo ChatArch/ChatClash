@@ -180,6 +180,7 @@ def init_command(
         changed: list[str] = []
         if not dry_run and not local_only:
             changed.extend(set_subscription_config(
+                home=str(result.home),
                 subscription_url=values.get("subscription_url"),
                 subconverter_url=values.get("subconverter_url"),
             ))

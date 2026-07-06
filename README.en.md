@@ -32,7 +32,8 @@ chatclash                         # 管理本机 Mihomo 代理服务
 │   ├── status                    # 查看订阅配置状态
 │   ├── update                    # 用订阅刷新本机配置
 │   ├── url                       # 生成订阅转换 URL
-│   └── generate                  # 生成 Clash 配置文件
+│   ├── generate                  # 生成 Clash 配置文件
+│   └── converter                 # 安装和管理本机 SubConverter 服务
 ├── proxy                         # 打印本机代理端点和环境变量
 │   ├── show                      # 显示代理端点，默认脱敏显示认证
 │   └── env                       # 输出 shell 代理环境变量；--no-mask 输出可用认证 URL
@@ -61,7 +62,7 @@ python -m pytest -q
 ## ChatArch conventions
 
 - CLI interaction uses ChatStyle helpers and the shared `-i/-I` pattern where applicable.
-- Operator config is stored through ChatEnv; local config stores only machine-local runtime facts.
+- Operator config and `CHATCLASH_HOME` are stored through ChatEnv; local config stores only derived runtime facts.
 - Major CLI capabilities have reusable Python APIs under `src/chatclash/` modules.
 - Sensitive values must not be printed in CLI output, logs, docs, or tests.
 

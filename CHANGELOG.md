@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.3
+
+- Make SubConverter-backed generation use the documented ACL4SSR parameters (`insert=false`, `new_name=true`, and related flags) instead of the minimal `/sub` query.
+- Prefer the configured SubConverter path for `sub update` when `CHATCLASH_SUBCONVERTER_URL` is set, so updates do not silently bypass the converter.
+- Normalize legacy SubConverter output keys (`Proxy`, `Proxy Group`, `Rule`) and compose local proxy groups/rules when the converter returns node-only `proxies`.
+- Reject generated configs that contain no usable proxies instead of writing a misleading direct-only config.
+- Register `CHATCLASH_HOME` with ChatEnv and persist it during `chatclash init`, keeping runtime root selection in the same config system as subscription settings.
+
 ## 0.1.2
 
 - Require the latest ChatEnv 0.2 line and tighten runtime dependency windows.

@@ -25,7 +25,8 @@ chatclash                         # 管理本机 Mihomo 代理服务
 │   ├── status                    # 查看订阅配置状态
 │   ├── update                    # 用订阅刷新本机配置
 │   ├── url                       # 生成订阅转换 URL
-│   └── generate                  # 生成 Clash 配置文件
+│   ├── generate                  # 生成 Clash 配置文件
+│   └── converter                 # 安装和管理本机 SubConverter 服务
 ├── proxy                         # 打印本机代理端点和环境变量
 │   ├── show                      # 显示代理端点，默认脱敏显示认证
 │   └── env                       # 输出 shell 代理环境变量；--no-mask 输出可用认证 URL
@@ -77,6 +78,10 @@ chatclash sub url --show -I
 chatclash sub update
 ```
 
+When `CHATCLASH_SUBCONVERTER_URL` is configured, `chatclash sub generate` and `chatclash sub update` use the converter endpoint to regenerate the local Mihomo config. The generated `config.yaml` is a machine-local artifact: do not copy it between machines. To refresh another host, configure that host's subscription/converter settings and run generation there.
+
+The converter request follows the original ACL4SSR/SubConverter contract (`target=clash`, `insert=false`, `new_name=true`, and related compatibility flags). Some providers return node-only YAML; ChatClash composes the local listener header, authentication, default groups, and rules around those generated nodes.
+
 
 ## Authentication and ChatEnv
 
@@ -96,3 +101,5 @@ chatenv cat -t chatclash
 chatenv cat -t chatclash --no-mask
 chatenv test -t chatclash
 ```
+
+ChatClash registers `CHATCLASH_HOME`, `CHATCLASH_SUBSCRIPTION_URL`, `CHATCLASH_PROXY_AUTH`, and `CHATCLASH_SUBCONVERTER_URL` with ChatEnv. Subscription URL and proxy auth are sensitive fields.

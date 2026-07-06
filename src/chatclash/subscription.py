@@ -10,19 +10,33 @@ from typing import Any
 
 import yaml
 
-from .chatenv_store import read_operator_config, write_operator_config, operator_status
+from .chatenv_store import operator_status, read_operator_config, write_operator_config
 from .constants import DEFAULT_SUBCONVERTER_CONFIG_URL
 from .paths import bind_host, clash_dir, controller_port, http_port, read_local_config, socks_port
-from .utils import clean, load_yaml_file, mask, redact_text, run_shell, write_yaml_file
+from .utils import clean, mask, run_shell
+
+SUBCONVERTER_QUERY_DEFAULTS = {
+    "target": "clash",
+    "insert": "false",
+    "emoji": "true",
+    "list": "false",
+    "tfo": "false",
+    "scv": "false",
+    "fdn": "false",
+    "sort": "false",
+    "new_name": "true",
+}
 
 
 def set_subscription_config(
     *,
+    home: str | None = None,
     subscription_url: str | None = None,
     proxy_auth: str | None = None,
     subconverter_url: str | None = None,
 ) -> list[str]:
     return write_operator_config(
+        home=home,
         subscription_url=subscription_url,
         proxy_auth=proxy_auth,
         subconverter_url=subconverter_url,
@@ -47,16 +61,16 @@ def build_subscription_url(
     if not converter:
         raise ValueError("missing subconverter URL")
     base = converter.rstrip("/") + "/sub"
-    query = urllib.parse.urlencode({"target": "clash", "url": sub, "config": config_url}, safe=":/")
+    query = urllib.parse.urlencode({**SUBCONVERTER_QUERY_DEFAULTS, "url": sub, "config": config_url}, safe=":/")
     return f"{base}?{query}"
 
 
 def _looks_like_clash_yaml(text: str) -> bool:
-    return ("proxies:" in text or "proxy-providers:" in text) and ("proxy-groups:" in text or "rules:" in text)
+    return any(marker in text for marker in ("proxies:", "proxy-providers:", "Proxy:", "Proxy Group:", "Rule:"))
 
 
 def _extract_clash_body(text: str) -> str:
-    markers = ("proxy-providers:", "proxies:", "proxy-groups:", "rule-providers:", "rules:")
+    markers = ("proxy-providers:", "proxies:", "proxy-groups:", "rule-providers:", "rules:", "Proxy:", "Proxy Group:", "Rule:")
     lines = text.splitlines()
     for index, line in enumerate(lines):
         if line.strip() in markers and not line.startswith((" ", "\t")):
@@ -88,11 +102,72 @@ def _header(config: dict[str, Any], proxy_auth: str | None) -> dict[str, Any]:
     return data
 
 
+def _normalize_body(body: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(body)
+    legacy_map = {
+        "Proxy": "proxies",
+        "Proxy Group": "proxy-groups",
+        "Rule": "rules",
+    }
+    for legacy, modern in legacy_map.items():
+        if modern not in normalized and legacy in normalized:
+            normalized[modern] = normalized.pop(legacy)
+    return normalized
+
+
+def _proxy_names(proxies: Any) -> list[str]:
+    names: list[str] = []
+    if not isinstance(proxies, list):
+        return names
+    for proxy in proxies:
+        if isinstance(proxy, dict) and proxy.get("name"):
+            names.append(str(proxy["name"]))
+    return names
+
+
+def _default_groups_and_rules(proxy_names: list[str]) -> dict[str, Any]:
+    if not proxy_names:
+        return {}
+    return {
+        "proxy-groups": [
+            {
+                "name": "AUTO",
+                "type": "url-test",
+                "proxies": proxy_names,
+                "url": "https://www.gstatic.com/generate_204",
+                "interval": 300,
+                "tolerance": 80,
+            },
+            {"name": "PROXY", "type": "select", "proxies": ["AUTO", "DIRECT", *proxy_names]},
+            {"name": "AI", "type": "select", "proxies": ["PROXY", "AUTO", *proxy_names]},
+        ],
+        "rules": [
+            "DOMAIN-SUFFIX,github.com,PROXY",
+            "DOMAIN-SUFFIX,githubusercontent.com,PROXY",
+            "DOMAIN-SUFFIX,githubassets.com,PROXY",
+            "DOMAIN-SUFFIX,github.io,PROXY",
+            "DOMAIN-SUFFIX,google.com,AI",
+            "DOMAIN-SUFFIX,gstatic.com,PROXY",
+            "MATCH,PROXY",
+        ],
+    }
+
+
 def _merge_config(remote_text: str, *, config: dict[str, Any], proxy_auth: str | None) -> str:
     body_text = _extract_clash_body(remote_text)
-    body = yaml.safe_load(body_text) or {}
-    if not isinstance(body, dict):
+    raw_body = yaml.safe_load(body_text) or {}
+    if not isinstance(raw_body, dict):
         raise ValueError("subscription did not produce a Clash YAML object")
+    body = _normalize_body(raw_body)
+    proxies = body.get("proxies") or []
+    proxy_names = _proxy_names(proxies)
+    if not proxy_names and "proxy-providers" not in body:
+        raise ValueError("subscription did not produce any usable proxies")
+    defaults = _default_groups_and_rules(proxy_names)
+    if proxy_names and not body.get("proxy-groups"):
+        body["proxy-groups"] = defaults["proxy-groups"]
+    if proxy_names and not body.get("rules"):
+        body["rules"] = defaults["rules"]
     merged = _header(config, proxy_auth)
     merged.update(body)
     # Local listener header wins even if remote YAML had its own ports/auth.
@@ -150,9 +225,10 @@ def update_subscription_config(*, dry_run: bool = False, no_validate: bool = Fal
     if dry_run:
         target = clash_dir(config) / "config.yaml"
         return {"target": str(target), "dry_run": True, "validated": False}
-    remote_text = _fetch_url(op.subscription_url, proxy=proxy)
-    if not _looks_like_clash_yaml(remote_text) and op.subconverter_url:
+    if op.subconverter_url:
         remote_text = _fetch_url(build_subscription_url(op.subscription_url, subconverter_url=op.subconverter_url), proxy=proxy)
+    else:
+        remote_text = _fetch_url(op.subscription_url, proxy=proxy)
     if not _looks_like_clash_yaml(remote_text):
         raise ValueError("subscription did not return Clash YAML")
     merged = _merge_config(remote_text, config=config, proxy_auth=op.proxy_auth)

@@ -40,13 +40,14 @@ chatclash                         # 管理本机 Mihomo 代理服务
 
 ChatEnv stores operator-owned values:
 
+- `CHATCLASH_HOME`
 - `CHATCLASH_SUBSCRIPTION_URL`
 - `CHATCLASH_PROXY_AUTH`
 - `CHATCLASH_SUBCONVERTER_URL`
 
 Machine-local config stores runtime layout and local listener facts:
 
-- home and runtime config directory
+- runtime config directory under `CHATCLASH_HOME`
 - Mihomo binary path
 - PID/log/cache paths
 - HTTP/SOCKS/controller ports
@@ -105,6 +106,10 @@ chatenv set CHATCLASH_SUBCONVERTER_URL='http://127.0.0.1:25500'
 chatclash sub url --show -I
 chatclash sub update
 ```
+
+When `CHATCLASH_SUBCONVERTER_URL` is configured, `chatclash sub generate` and `chatclash sub update` use the converter endpoint to regenerate the local Mihomo config. The generated `config.yaml` is a machine-local artifact: do not copy it between machines. To refresh another host, configure that host's subscription/converter settings and run generation there.
+
+The converter request follows the original ACL4SSR/SubConverter contract (`target=clash`, `insert=false`, `new_name=true`, and related compatibility flags). Some providers return node-only YAML; ChatClash composes the local listener header, authentication, default groups, and rules around those generated nodes.
 
 
 ## Authentication and ChatEnv

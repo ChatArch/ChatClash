@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chatenv import BaseEnvConfig, EnvField
 
 
@@ -12,6 +14,11 @@ class ChatClashConfig(BaseEnvConfig):
     _aliases = ["chatclash"]
     _storage_dir = "chatclash"
 
+    CHATCLASH_HOME = EnvField(
+        "CHATCLASH_HOME",
+        default=str(Path.home() / ".chatarch" / "chatclash"),
+        desc="Machine-local ChatClash runtime directory.",
+    )
     CHATCLASH_SUBSCRIPTION_URL = EnvField(
         "CHATCLASH_SUBSCRIPTION_URL",
         desc="Subscription URL used to generate the runtime proxy config.",
@@ -30,6 +37,7 @@ class ChatClashConfig(BaseEnvConfig):
     @classmethod
     def test(cls) -> None:
         required = {
+            "CHATCLASH_HOME",
             "CHATCLASH_SUBSCRIPTION_URL",
             "CHATCLASH_PROXY_AUTH",
             "CHATCLASH_SUBCONVERTER_URL",

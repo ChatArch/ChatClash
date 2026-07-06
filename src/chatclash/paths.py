@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
+from .chatenv_store import read_operator_config
 from .constants import (
     DEFAULT_BIND_HOST,
     DEFAULT_CONTROLLER_PORT,
@@ -19,7 +19,8 @@ from .utils import load_yaml_file, write_yaml_file
 
 
 def chatclash_home() -> Path:
-    return Path(os.getenv("CHATCLASH_HOME") or (Path.home() / ".chatarch" / "chatclash"))
+    home = read_operator_config().home
+    return Path(home) if home else Path.home() / ".chatarch" / "chatclash"
 
 
 def local_config_path() -> Path:

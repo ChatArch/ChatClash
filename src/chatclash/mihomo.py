@@ -182,16 +182,51 @@ def restart_mihomo(*, dry_run: bool = False) -> CommandResult:
     return CommandResult(action="restart_mihomo", lines=["restarted"])
 
 
+LOOPBACK_BIND_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+
+def _active_config_exposes_lan(active: dict[str, object]) -> bool:
+    if active.get("allow-lan") is not True:
+        return False
+    bind_address = str(active.get("bind-address") or "0.0.0.0").strip()
+    return bind_address not in LOOPBACK_BIND_HOSTS
+
+
+def validate_proxy_auth_header(active: dict[str, object]) -> list[str]:
+    """Validate that LAN-shared proxies use the ChatClash proxy auth source."""
+    op = read_operator_config()
+    auth_entries = active.get("authentication") or []
+    if isinstance(auth_entries, str):
+        auth_entries = [auth_entries]
+    if not isinstance(auth_entries, list):
+        raise RuntimeError("active config authentication must be a list")
+
+    exposes_lan = _active_config_exposes_lan(active)
+    if exposes_lan and not op.proxy_auth:
+        raise RuntimeError("LAN proxy is enabled but CHATCLASH_PROXY_AUTH is not configured")
+    if exposes_lan and not auth_entries:
+        raise RuntimeError("LAN proxy is enabled but active config has no authentication; refresh config with ChatClash before restart")
+    if op.proxy_auth and auth_entries != [op.proxy_auth]:
+        raise RuntimeError("active config authentication does not match ChatClash proxy auth; refresh config before restart")
+    return ["proxy_auth: validated" if auth_entries else "proxy_auth: not required"]
+
+
 def validate_mihomo_config(*, dry_run: bool = False) -> CommandResult:
     config = read_local_config()
     target_dir = clash_dir(config)
     target = target_dir / "config.yaml"
     cmd = [str(engine_path(config)), "-t", "-d", str(target_dir)]
     lines = [f"config: {target}", "validate: " + " ".join(cmd)]
+    if not target.exists():
+        if dry_run:
+            return CommandResult(action="validate_mihomo", dry_run=True, lines=lines)
+        raise RuntimeError(f"active config does not exist: {target}")
+    active = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    if not isinstance(active, dict):
+        raise RuntimeError("active config is not a Clash YAML object")
+    lines += validate_proxy_auth_header(active)
     if dry_run:
         return CommandResult(action="validate_mihomo", dry_run=True, lines=lines)
-    if not target.exists():
-        raise RuntimeError(f"active config does not exist: {target}")
     if not engine_path(config).exists():
         raise RuntimeError(f"mihomo binary does not exist: {engine_path(config)}")
     output = run_shell(cmd)

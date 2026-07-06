@@ -765,7 +765,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.4" in result.output
+    assert "0.1.5" in result.output
 
 
 
@@ -955,3 +955,49 @@ def test_chatenv_test_invokes_chatclash_proxy_check(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert calls == [{"min_success": 1, "timeout": 10, "urls": None, "dry_run": False}]
     assert "OK proxy success_count=1" in result.output
+
+
+def test_proxy_validate_rejects_lan_proxy_without_authentication(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    assert runner.invoke(main, ["init", "--local-only", "-I", "-y"]).exit_code == 0
+
+    active_path = home / "clash" / "config.yaml"
+    active = yaml.safe_load(active_path.read_text(encoding="utf-8"))
+    active["allow-lan"] = True
+    active["bind-address"] = "0.0.0.0"
+    active.pop("authentication", None)
+    active_path.write_text(yaml.safe_dump(active, sort_keys=False), encoding="utf-8")
+
+    result = runner.invoke(main, ["proxy", "validate", "--dry-run", "-I"])
+
+    assert result.exit_code != 0
+    assert "LAN proxy is enabled" in result.output
+    assert "CHATCLASH_PROXY_AUTH" in result.output
+
+
+def test_proxy_set_refresh_restores_proxy_authentication(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    assert runner.invoke(
+        main,
+        ["init", "--subscription-url", "https://subscribe.example.test/secret-token", "--proxy-auth", "user:secret-pass", "-I"],
+    ).exit_code == 0
+
+    active_path = home / "clash" / "config.yaml"
+    active = yaml.safe_load(active_path.read_text(encoding="utf-8"))
+    active["allow-lan"] = True
+    active["bind-address"] = "0.0.0.0"
+    active.pop("authentication", None)
+    active_path.write_text(yaml.safe_dump(active, sort_keys=False), encoding="utf-8")
+
+    refresh = runner.invoke(main, ["proxy", "set", "--http-port", "18080", "-I", "-y"])
+    assert refresh.exit_code == 0, refresh.output
+    refreshed = yaml.safe_load(active_path.read_text(encoding="utf-8"))
+    assert refreshed["authentication"] == ["user:secret-pass"]
+
+    validate = runner.invoke(main, ["proxy", "validate", "--dry-run", "-I"])
+    assert validate.exit_code == 0, validate.output
+    assert "proxy_auth: validated" in validate.output

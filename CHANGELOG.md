@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.5
+
+- Make `chatclash proxy validate` fail when a LAN-exposed active Mihomo config is missing proxy authentication or no longer matches the ChatClash/ChatEnv proxy auth source.
+- Add regression tests for refreshing active Mihomo configs so `authentication` is restored before restart.
+- Keep the intended LAN sharing mode while preventing unauthenticated proxy exposure.
+
 ## 0.1.4
 
 - Add `chatclash proxy set` to update local HTTP/SOCKS/controller port and host settings, then re-render the active config header without restarting Mihomo.

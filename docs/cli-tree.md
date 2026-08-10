@@ -1,23 +1,6 @@
-# chatclash documentation
+# CLI 树
 
-`chatclash` is a single-machine Mihomo management tool. It manages the local runtime, subscription-backed config generation, and ChatEnv-backed proxy validation on the machine where it runs.
-
-## Recommended flow
-
-```bash
-chatclash init
-chatclash sub set -i
-chatclash mihomo install --daemon
-chatclash sub update
-chatclash mihomo start
-chatclash status
-chatclash --tree
-chatenv test -t chatclash
-```
-
-## CLI tree
-
-运行 `chatclash --tree` 可回读真实注册命令树。独立页面见 [CLI 树](cli-tree.md)：
+`chatclash --tree` 从 Click 注册命令实时生成以下命令树。文档只记录已实现的可达命令；规划中的能力不要写成成功命令。
 
 ```text
 chatclash  # Manage this machine's ChatClash runtime and subscription config.
@@ -55,65 +38,8 @@ chatclash  # Manage this machine's ChatClash runtime and subscription config.
     └── url [<SUBSCRIPTION-URL>] [--subconverter-url <SUBCONVERTER-URL>] [--show] [--interactive]  # Build a subconverter URL for the configured subscription.
 ```
 
-## Common commands
+## 更新规则
 
-```bash
-chatclash status
-chatclash sub status
-chatclash sub update
-chatclash mihomo status
-chatclash mihomo logs
-chatclash proxy show
-eval "$(chatclash proxy env)"
-```
-
-Detailed design: [cli-design.md](cli-design.md).
-
-
-
-## Local subscription converter service
-
-`chatclash sub converter` manages the local subscription converter service used by `CHATCLASH_SUBCONVERTER_URL`. Host and port are service runtime parameters, not ChatEnv fields.
-
-```bash
-chatclash sub converter install
-chatclash sub converter start              # default http://127.0.0.1:25500
-chatclash sub converter start --host 0.0.0.0 --port 26666
-chatclash sub converter status
-chatclash sub converter logs --tail 200
-chatclash sub converter stop
-```
-
-After starting a local converter, store its base URL through ChatEnv when this machine should use it for subscription conversion:
-
-```bash
-chatenv set CHATCLASH_SUBCONVERTER_URL='http://127.0.0.1:25500'
-chatclash sub url --show -I
-chatclash sub update
-```
-
-When `CHATCLASH_SUBCONVERTER_URL` is configured, `chatclash sub generate` and `chatclash sub update` use the converter endpoint to regenerate the local Mihomo config. The generated `config.yaml` is a machine-local artifact: do not copy it between machines. To refresh another host, configure that host's subscription/converter settings and run generation there.
-
-The converter request follows the original ACL4SSR/SubConverter contract (`target=clash`, `insert=false`, `new_name=true`, and related compatibility flags). Some providers return node-only YAML; ChatClash composes the local listener header, authentication, default groups, and rules around those generated nodes.
-
-
-## Authentication and ChatEnv
-
-All public commands expose the shared ChatStyle `-i/-I` interactive option. For first-time machine setup, run `chatclash init` interactively, or pass values explicitly for automation:
-
-```bash
-chatclash init --url-env CHATCLASH_SUBSCRIPTION_URL --proxy-auth-env CHATCLASH_PROXY_AUTH -I
-chatclash proxy show              # masked
-chatclash proxy show --no-mask    # shows authenticated proxy URLs
-chatclash proxy env --no-mask     # usable authenticated http_proxy/https_proxy/all_proxy exports
-```
-
-ChatEnv remains the system of record:
-
-```bash
-chatenv cat -t chatclash
-chatenv cat -t chatclash --no-mask
-chatenv test -t chatclash
-```
-
-ChatClash registers `CHATCLASH_HOME`, `CHATCLASH_SUBSCRIPTION_URL`, `CHATCLASH_PROXY_AUTH`, and `CHATCLASH_SUBCONVERTER_URL` with ChatEnv. Subscription URL and proxy auth are sensitive fields.
+- 每次新增、删除或重命名命令时，同步更新测试、README、CLI 树页面和 changelog。
+- 树中的敏感选项只展示参数名，不展示订阅 URL、代理认证或 token 值。
+- 本包只管理当前机器的 ChatClash/Mihomo 运行时，不编排远程机器。

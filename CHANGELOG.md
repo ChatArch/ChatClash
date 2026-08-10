@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.6
+
+- Add top-level `chatclash --tree` generated from the registered Click command tree.
+- Add tests for help/tree/version output and keep template `hello` absent from the visible CLI.
+- Align MkDocs site metadata, public-domain Preview Docs links, docs dependency bounds, package documentation URL, and PyPI trusted-publishing workflow.
+
 ## 0.1.5
 
 - Make `chatclash proxy validate` fail when a LAN-exposed active Mihomo config is missing proxy authentication or no longer matches the ChatClash/ChatEnv proxy auth source.

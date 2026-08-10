@@ -13,12 +13,12 @@
 2. Update `CHANGELOG.md`.
 3. Run tests and build.
 4. Commit with a release message.
-5. Tag the release, for example `v0.1.2`.
+5. Tag the merged default-branch commit, for example `v0.1.6`.
 6. Push branch and tag:
 
 ```bash
 git push origin master
-git push origin v0.1.2
+git push origin v0.1.6
 ```
 
 If you are releasing the current stable line without bumping code version, tag the exact release commit as `v0.1.0` first and let the tag-triggered workflow publish from that ref.
@@ -28,7 +28,7 @@ If you are releasing the current stable line without bumping code version, tag t
 - `CI`: tests, build, and docs build.
 - `Deploy Docs`: publishes `mkdocs gh-deploy` on push to `master` or `main`.
 - `Preview Docs`: publishes preview docs for pull requests from the same repo.
-- `Publish Package`: manual dispatch for packaging; enable trusted publishing or PyPI credentials before using it as a real release gate.
+- `Publish Package`: tag-triggered build and PyPI publish through trusted publishing/OIDC (`id-token: write`).
 
 ## Notes
 

@@ -1,11 +1,46 @@
-site_name: chatclash 文档
-site_url: https://OWNER.github.io/REPO
-repo_url: https://github.com/OWNER/REPO
+site_name: ChatClash 文档
+site_url: https://arch.gh.wzhecnu.cn/ChatClash/
+repo_url: https://github.com/ChatArch/ChatClash
+repo_name: ChatArch/ChatClash
+
 theme:
   name: material
   language: zh
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: zh
+          default: true
+          name: 中文
+          build: true
+          site_name: ChatClash 文档
+        - locale: en
+          name: English
+          build: true
+          site_name: ChatClash Documentation
+          nav_translations:
+            首页: Home
+            CLI 树: CLI Tree
+            CLI 设计: CLI Design
+            发版: Release
+
+extra:
+  alternate:
+    - name: 中文
+      link: /ChatClash/
+      lang: zh
+    - name: English
+      link: /ChatClash/en/
+      lang: en
+
 nav:
   - 首页: index.md
+  - CLI 树: cli-tree.md
   - CLI 设计: cli-design.md
   - 发版: release.md
-  - English: index.en.md

@@ -765,7 +765,32 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.5" in result.output
+    assert "0.1.6" in result.output
+
+
+def test_top_level_help_mentions_tree_option():
+    result = CliRunner().invoke(main, ["--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "--tree" in result.output
+
+
+def test_top_level_tree_shows_registered_commands_without_template_leftovers():
+    result = CliRunner().invoke(main, ["--tree"])
+
+    assert result.exit_code == 0, result.output
+    assert "chatclash  # Manage this machine's ChatClash runtime" in result.output
+    assert "--help  # Show this help message." in result.output
+    assert "--version  # Show the installed package version." in result.output
+    assert "--tree  # Print the registered command tree." in result.output
+    assert "init" in result.output
+    assert "sub" in result.output
+    assert "converter" in result.output
+    assert "proxy" in result.output
+    assert "validate" in result.output
+    assert "mihomo" in result.output
+    assert "reload" in result.output
+    assert "hello" not in result.output
 
 
 

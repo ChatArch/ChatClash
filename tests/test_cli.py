@@ -765,7 +765,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.6" in result.output
+    assert "0.1.7" in result.output
 
 
 def test_top_level_help_mentions_tree_option():

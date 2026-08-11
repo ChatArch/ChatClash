@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.7 - 2026-08-12
+
+- Add the MkDocs Material emoji renderer baseline so Material icon shorthand cannot leak into generated/live pages.
+- Broaden the docs extra to the current ChatArch Material compatibility window.
+- Harden tag-driven PyPI publishing with tag/package-version, default-branch ancestry, and exact PyPI version guards.
+- Add installed `chatclash --version` / `chatclash --tree` smoke checks to CI.
+
 ## 0.1.6
 
 - Add top-level `chatclash --tree` generated from the registered Click command tree.

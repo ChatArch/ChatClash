@@ -1,5 +1,16 @@
 from pathlib import Path
 
+from click.testing import CliRunner
+
+from chatclash.cli import main
+
+
+def _text_block(path: str) -> str:
+    text = Path(path).read_text(encoding="utf-8")
+    marker = "```text\n"
+    assert marker in text, path
+    return text.split(marker, 1)[1].split("\n```", 1)[0].strip()
+
 
 def test_mkdocs_material_renderer_and_public_docs_contract():
     mkdocs = Path("mkdocs.yml").read_text(encoding="utf-8")
@@ -27,6 +38,18 @@ def test_mkdocs_material_renderer_and_public_docs_contract():
         assert "ChatClash" in text
         assert "--tree" in text
         assert "--tree-brief" in text
+
+
+def test_documented_trees_match_registered_full_and_brief_output():
+    full = CliRunner().invoke(main, ["--tree"])
+    brief = CliRunner().invoke(main, ["--tree-brief"])
+
+    assert full.exit_code == 0, full.output
+    assert brief.exit_code == 0, brief.output
+    for path in ["README.md", "docs/cli-tree.md", "docs/cli-tree.en.md"]:
+        assert _text_block(path) == full.output.strip(), path
+    for path in ["README.en.md", "docs/index.md"]:
+        assert _text_block(path) == brief.output.strip(), path
 
 
 def test_no_literal_material_icon_tokens_in_source_docs():

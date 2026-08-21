@@ -2,38 +2,15 @@
 
 This PR tracks the ChatClash CLI cleanup and code-structure refactor.
 
-## Target CLI tree
+## Registered CLI tree
 
-```text
-chatclash
-├── init
-├── status
-├── sub
-│   ├── set
-│   ├── status
-│   ├── update
-│   ├── url
-│   └── generate
-├── proxy
-│   ├── set
-│   ├── show
-│   └── env
-└── mihomo
-    ├── install
-    ├── uninstall
-    ├── update
-    ├── start
-    ├── stop
-    ├── restart
-    ├── status
-    └── logs
-```
+The cleanup target is now enforced by the live Click registry. Use `chatclash --tree` for the signature-bearing view and `chatclash --tree-brief` for the same groups and leaves without signatures; the checked-in readback is maintained in [CLI Tree](cli-tree.md).
 
 ## Review requirements
 
 This branch must satisfy the ChatArch CLI repository review points:
 
-1. CLI tree is concise and matches this PRD.
+1. The ChatStyle full and brief CLI trees match the registered command surface.
 2. Code is decoupled and layered; `cli.py` is a thin adapter.
 3. CLI interaction follows ChatStyle conventions.
 4. Major CLI capabilities have reusable Python APIs.

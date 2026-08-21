@@ -18,37 +18,51 @@ chatclash mihomo install --daemon
 chatclash sub update
 chatclash mihomo start
 chatclash status
+chatclash --tree
+chatclash --tree-brief
 chatenv test -t chatclash
 ```
 
 ## CLI tree
 
+`chatclash --tree` renders signatures from the registered Click commands. The compact `chatclash --tree-brief` view keeps the same nodes:
+
 ```text
-chatclash                         # 管理本机 Mihomo 代理服务
-├── init                          # 初始化本机运行目录，并交互式收集 ChatEnv 配置
-├── status                        # 查看整体状态
-├── sub                           # 管理订阅和生成代理配置
-│   ├── set                       # 保存订阅配置到 ChatEnv
-│   ├── status                    # 查看订阅配置状态
-│   ├── update                    # 用订阅刷新本机配置
-│   ├── url                       # 生成订阅转换 URL
-│   ├── generate                  # 生成 Clash 配置文件
-│   └── converter                 # 安装和管理本机 SubConverter 服务
-├── proxy                         # 打印本机代理端点和环境变量
-│   ├── show                      # 显示代理端点，默认脱敏显示认证
-│   ├── env                       # 输出 shell 代理环境变量；--no-mask 输出可用认证 URL
-│   ├── set                       # 修改本机代理端口/host，并重写 active config header
-│   └── validate                  # 校验当前 active Mihomo config
-└── mihomo                        # 管理 Mihomo 程序
-    ├── install                   # 安装 Mihomo
-    ├── uninstall                 # 卸载 Mihomo
-    ├── update                    # 更新 Mihomo
-    ├── start                     # 启动 Mihomo
-    ├── stop                      # 停止 Mihomo
-    ├── restart                   # 重启 Mihomo
-    ├── reload                    # 通过 controller 热加载当前 active config
-    ├── status                    # 查看 Mihomo 状态
-    └── logs                      # 查看 Mihomo 日志
+chatclash
+├── --help  # Show this message and exit.
+├── --version  # Show the version and exit.
+├── --tree  # Print the registered CLI tree and exit.
+├── --tree-brief  # Print the registered CLI tree without parameter signatures and exit.
+├── --interactive  # Auto prompt on missing args, -i forces interactive, -I disables it.
+├── init  # Initialize this machine and collect required ChatEnv config.
+├── mihomo  # Install and manage the local runtime.
+│   ├── install  # Install the local Mihomo binary.
+│   ├── logs  # Show local Mihomo runtime logs.
+│   ├── reload  # Hot-reload the current active config through Mihomo's controller.
+│   ├── restart  # Restart the local Mihomo runtime.
+│   ├── start  # Start the local Mihomo runtime.
+│   ├── status  # Show local Mihomo runtime status.
+│   ├── stop  # Stop the local Mihomo runtime.
+│   ├── uninstall  # Uninstall the local Mihomo binary.
+│   └── update  # Update the local Mihomo binary.
+├── proxy  # Show and update local proxy endpoint settings.
+│   ├── env  # Print shell proxy environment exports.
+│   ├── set  # Update local proxy listener settings and re-render active config.
+│   ├── show  # Show proxy endpoints for this machine.
+│   └── validate  # Validate the current active Mihomo config.
+├── status  # Show this machine's ChatClash status.
+└── sub  # Manage subscription-backed runtime config.
+    ├── converter  # Install and manage the local subscription converter service.
+    │   ├── install  # Install the local subscription converter binary.
+    │   ├── logs  # Show local subscription converter logs.
+    │   ├── start  # Start the local subscription converter service.
+    │   ├── status  # Show the local subscription converter service status.
+    │   └── stop  # Stop the local subscription converter service.
+    ├── generate  # Generate a Clash-compatible config through subscription conversion.
+    ├── set  # Store subscription operator config through ChatEnv.
+    ├── status  # Show redacted subscription config state.
+    ├── update  # Refresh the runtime config from the configured subscription.
+    └── url  # Build a subconverter URL for the configured subscription.
 ```
 
 ## Common commands
@@ -64,7 +78,7 @@ python -m pytest -q
 
 ## ChatArch conventions
 
-- CLI interaction uses ChatStyle helpers and the shared `-i/-I` pattern where applicable.
+- CLI interaction and registered full/brief tree rendering use ChatStyle, including the shared `-i/-I` pattern where applicable.
 - Operator config and `CHATCLASH_HOME` are stored through ChatEnv; local config stores only derived runtime facts.
 - Major CLI capabilities have reusable Python APIs under `src/chatclash/` modules.
 - Sensitive values must not be printed in CLI output, logs, docs, or tests.

@@ -12,47 +12,50 @@ chatclash sub update
 chatclash mihomo start
 chatclash status
 chatclash --tree
+chatclash --tree-brief
 chatenv test -t chatclash
 ```
 
 ## CLI tree
 
-运行 `chatclash --tree` 可回读真实注册命令树。独立页面见 [CLI 树](cli-tree.md)：
+ChatStyle 从真实 Click 注册表生成两种视图：`chatclash --tree` 保留参数签名，`chatclash --tree-brief` 保留相同节点但省略签名。完整视图见 [CLI 树](cli-tree.md)；简版如下：
 
 ```text
-chatclash  # Manage this machine's ChatClash runtime and subscription config.
-├── --help  # Show this help message.
-├── --version  # Show the installed package version.
-├── --tree  # Print the registered command tree.
-├── init [--home <HOME>] [--dry-run] [--local-only] [--url-env <URL-ENV>] [--subscription-url <SUBSCRIPTION-URL>] [--proxy-auth-env <PROXY-AUTH-ENV>] [--proxy-auth <PROXY-AUTH>] [--subconverter-url <SUBCONVERTER-URL>] [--yes] [--interactive]  # Initialize this machine and collect required ChatEnv config.
-├── mihomo [--interactive]  # Install and manage the local runtime.
-│   ├── install [--repo <REPO>] [--version <VERSION>] [--dry-run] [--force] [--daemon] [--interactive]  # Install the local Mihomo binary.
-│   ├── logs [--tail <TAIL>] [--dry-run] [--interactive]  # Show local Mihomo runtime logs.
-│   ├── reload [--dry-run] [--interactive]  # Hot-reload the current active config through Mihomo's controller.
-│   ├── restart [--dry-run] [--interactive]  # Restart the local Mihomo runtime.
-│   ├── start [--dry-run] [--interactive]  # Start the local Mihomo runtime.
-│   ├── status [--interactive]  # Show local Mihomo runtime status.
-│   ├── stop [--dry-run] [--interactive]  # Stop the local Mihomo runtime.
-│   ├── uninstall [--dry-run] [--daemon] [--interactive]  # Uninstall the local Mihomo binary.
-│   └── update [--repo <REPO>] [--version <VERSION>] [--dry-run] [--interactive]  # Update the local Mihomo binary.
-├── proxy [--interactive]  # Show and update local proxy endpoint settings.
-│   ├── env [--no-mask] [--interactive]  # Print shell proxy environment exports.
-│   ├── set [--http-port <HTTP-PORT-VALUE>] [--socks-port <SOCKS-PORT-VALUE>] [--controller-port <CONTROLLER-PORT-VALUE>] [--bind-host <BIND-HOST>] [--proxy-host <PROXY-HOST-VALUE>] [--dry-run] [--yes] [--interactive]  # Update local proxy listener settings and re-render active config.
-│   ├── show [--no-mask] [--interactive]  # Show proxy endpoints for this machine.
-│   └── validate [--dry-run] [--interactive]  # Validate the current active Mihomo config.
-├── status [--interactive]  # Show this machine's ChatClash status.
-└── sub [--interactive]  # Manage subscription-backed runtime config.
-    ├── converter [--interactive]  # Install and manage the local subscription converter service.
-    │   ├── install [--source <SOURCE>] [--repo <REPO>] [--version <VERSION>] [--force] [--dry-run] [--interactive]  # Install the local subscription converter binary.
-    │   ├── logs [--tail <TAIL>] [--dry-run] [--interactive]  # Show local subscription converter logs.
-    │   ├── start [--host <HOST>] [--port <PORT>] [--dry-run] [--interactive]  # Start the local subscription converter service.
-    │   ├── status [--host <HOST>] [--port <PORT>] [--interactive]  # Show the local subscription converter service status.
-    │   └── stop [--dry-run] [--interactive]  # Stop the local subscription converter service.
-    ├── generate [<SUBSCRIPTION-URL>] [--subconverter-url <SUBCONVERTER-URL>] [--output <OUTPUT>] [--dry-run] [--yes] [--interactive]  # Generate a Clash-compatible config through subscription conversion.
-    ├── set [--url-env <URL-ENV>] [--subconverter-url-env <SUBCONVERTER-URL-ENV>] [--subscription-url <SUBSCRIPTION-URL>] [--subconverter-url <SUBCONVERTER-URL>] [--interactive]  # Store subscription operator config through ChatEnv.
-    ├── status [--interactive]  # Show redacted subscription config state.
-    ├── update [--dry-run] [--no-validate] [--fetch-proxy <FETCH-PROXY>] [--interactive]  # Refresh the runtime config from the configured subscription.
-    └── url [<SUBSCRIPTION-URL>] [--subconverter-url <SUBCONVERTER-URL>] [--show] [--interactive]  # Build a subconverter URL for the configured subscription.
+chatclash
+├── --help  # Show this message and exit.
+├── --version  # Show the version and exit.
+├── --tree  # Print the registered CLI tree and exit.
+├── --tree-brief  # Print the registered CLI tree without parameter signatures and exit.
+├── --interactive  # Auto prompt on missing args, -i forces interactive, -I disables it.
+├── init  # Initialize this machine and collect required ChatEnv config.
+├── mihomo  # Install and manage the local runtime.
+│   ├── install  # Install the local Mihomo binary.
+│   ├── logs  # Show local Mihomo runtime logs.
+│   ├── reload  # Hot-reload the current active config through Mihomo's controller.
+│   ├── restart  # Restart the local Mihomo runtime.
+│   ├── start  # Start the local Mihomo runtime.
+│   ├── status  # Show local Mihomo runtime status.
+│   ├── stop  # Stop the local Mihomo runtime.
+│   ├── uninstall  # Uninstall the local Mihomo binary.
+│   └── update  # Update the local Mihomo binary.
+├── proxy  # Show and update local proxy endpoint settings.
+│   ├── env  # Print shell proxy environment exports.
+│   ├── set  # Update local proxy listener settings and re-render active config.
+│   ├── show  # Show proxy endpoints for this machine.
+│   └── validate  # Validate the current active Mihomo config.
+├── status  # Show this machine's ChatClash status.
+└── sub  # Manage subscription-backed runtime config.
+    ├── converter  # Install and manage the local subscription converter service.
+    │   ├── install  # Install the local subscription converter binary.
+    │   ├── logs  # Show local subscription converter logs.
+    │   ├── start  # Start the local subscription converter service.
+    │   ├── status  # Show the local subscription converter service status.
+    │   └── stop  # Stop the local subscription converter service.
+    ├── generate  # Generate a Clash-compatible config through subscription conversion.
+    ├── set  # Store subscription operator config through ChatEnv.
+    ├── status  # Show redacted subscription config state.
+    ├── update  # Refresh the runtime config from the configured subscription.
+    └── url  # Build a subconverter URL for the configured subscription.
 ```
 
 ## Common commands

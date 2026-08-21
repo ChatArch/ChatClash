@@ -31,6 +31,7 @@ def test_ci_workflow_runs_docs_build_and_installed_cli_smoke():
     assert "python -m build" in workflow
     assert "chatclash --version" in workflow
     assert "chatclash --tree" in workflow
+    assert "chatclash --tree-brief" in workflow
 
 
 def test_docs_workflows_use_chatarch_public_domain_and_root_deploy():

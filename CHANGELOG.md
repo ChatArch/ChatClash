@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8 - 2026-08-21
+
+- Replace the package-local CLI tree renderer with ChatStyle's registered Click tree runtime.
+- Add top-level `chatclash --tree-brief` while preserving the full command signatures in `--tree`.
+- Align the runtime bounds with `chatstyle>=0.2.0,<0.3.0` and `chatenv>=0.2.10,<0.3.0`.
+- Add source, CI, docs, and release-contract coverage for the shared full and brief tree views.
+
 ## 0.1.7 - 2026-08-12
 
 - Add the MkDocs Material emoji renderer baseline so Material icon shorthand cannot leak into generated/live pages.

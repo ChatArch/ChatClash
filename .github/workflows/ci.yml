@@ -29,5 +29,6 @@ jobs:
         run: |
           chatclash --version
           chatclash --tree
+          chatclash --tree-brief
       - run: python -m build
       - run: mkdocs build --strict

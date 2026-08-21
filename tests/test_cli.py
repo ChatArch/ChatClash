@@ -765,24 +765,28 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.7" in result.output
+    assert "0.1.8" in result.output
 
 
-def test_top_level_help_mentions_tree_option():
+def test_top_level_help_mentions_shared_tree_options():
     result = CliRunner().invoke(main, ["--help"])
 
     assert result.exit_code == 0, result.output
+    assert main.name == "chatclash"
     assert "--tree" in result.output
+    assert "--tree-brief" in result.output
 
 
 def test_top_level_tree_shows_registered_commands_without_template_leftovers():
     result = CliRunner().invoke(main, ["--tree"])
 
     assert result.exit_code == 0, result.output
-    assert "chatclash  # Manage this machine's ChatClash runtime" in result.output
-    assert "--help  # Show this help message." in result.output
-    assert "--version  # Show the installed package version." in result.output
-    assert "--tree  # Print the registered command tree." in result.output
+    assert result.output.splitlines()[0] == "chatclash"
+    assert "--help  # Show this message and exit." in result.output
+    assert "--version  # Show the version and exit." in result.output
+    assert "--tree  # Print the registered CLI tree and exit." in result.output
+    assert "--tree-brief  # Print the registered CLI tree without parameter signatures and exit." in result.output
+    assert "generate [SUBSCRIPTION-URL] [--subconverter-url SUBCONVERTER-URL] [--output OUTPUT]" in result.output
     assert "init" in result.output
     assert "sub" in result.output
     assert "converter" in result.output
@@ -791,6 +795,18 @@ def test_top_level_tree_shows_registered_commands_without_template_leftovers():
     assert "mihomo" in result.output
     assert "reload" in result.output
     assert "hello" not in result.output
+
+
+def test_top_level_tree_brief_preserves_commands_without_signatures():
+    result = CliRunner().invoke(main, ["--tree-brief"])
+
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[0] == "chatclash"
+    assert "generate  # Generate a Clash-compatible config" in result.output
+    assert "converter  # Install and manage the local subscription converter service." in result.output
+    assert "reload  # Hot-reload the current active config" in result.output
+    assert "[SUBSCRIPTION-URL]" not in result.output
+    assert "[--output OUTPUT]" not in result.output
 
 
 

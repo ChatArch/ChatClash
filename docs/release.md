@@ -3,7 +3,13 @@
 ## Preconditions
 
 - `python -m pytest -q`
+- `mkdocs build --strict`
 - `python -m build`
+- `python -m twine check dist/*`
+- `chatclash --version`
+- `chatclash --tree`
+- `chatclash --tree-brief`
+- `git diff --check`
 - Optional real smoke check:
   - `<LOCAL_SKILLS_DIR>/chatclash-dev/scripts/smoke_service.sh <CHATCLASH_REPO>`
 
@@ -11,17 +17,18 @@
 
 1. Update `src/chatclash/__init__.py` version.
 2. Update `CHANGELOG.md`.
-3. Run tests and build.
-4. Commit with a release message.
-5. Tag the merged default-branch commit, for example `v0.1.6`.
-6. Push branch and tag:
+3. Run all preconditions above.
+4. Commit and push a release branch, then open a PR against `master`.
+5. Merge only after the exact PR head has green checks.
+6. Fast-forward the local `master` checkout to the merged remote commit.
+7. Tag that exact merged default-branch commit, then push only the tag:
 
 ```bash
-git push origin master
-git push origin v0.1.6
+git tag -a v0.1.8 -m "Release ChatClash 0.1.8"
+git push origin v0.1.8
 ```
 
-If you are releasing the current stable line without bumping code version, tag the exact release commit as `v0.1.0` first and let the tag-triggered workflow publish from that ref.
+8. Require the tag-driven publish workflow to succeed, verify wheel and sdist on the exact PyPI version page, and clean-install that exact version before running published `--version`, `--tree`, and `--tree-brief` readbacks.
 
 ## GitHub Actions
 

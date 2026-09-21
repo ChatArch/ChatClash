@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from chatenv import BaseEnvConfig, EnvStore, get_paths
+from chatenv import EnvStore, get_paths
 
 from .config import ChatClashConfig
 from .utils import clean, mask
@@ -19,21 +19,22 @@ class OperatorConfig:
     subconverter_url: str | None = None
 
 
-def load_chatenv() -> None:
-    BaseEnvConfig.load_all(get_paths().envs_dir)
+def load_chatenv() -> dict[str, str]:
+    """Read only this provider's current active profile through ChatEnv."""
+    return EnvStore(get_paths().envs_dir).load_active(ChatClashConfig)
 
 
-def _value(env_key: str, field) -> str | None:
-    load_chatenv()
-    return clean(os.getenv(env_key) or str(field.value or ""))
+def _value(env_key: str, values: dict[str, str]) -> str | None:
+    return clean(os.getenv(env_key) or values.get(env_key) or "")
 
 
 def read_operator_config() -> OperatorConfig:
+    values = load_chatenv()
     return OperatorConfig(
-        home=_value("CHATCLASH_HOME", ChatClashConfig.CHATCLASH_HOME),
-        subscription_url=_value("CHATCLASH_SUBSCRIPTION_URL", ChatClashConfig.CHATCLASH_SUBSCRIPTION_URL),
-        proxy_auth=_value("CHATCLASH_PROXY_AUTH", ChatClashConfig.CHATCLASH_PROXY_AUTH),
-        subconverter_url=_value("CHATCLASH_SUBCONVERTER_URL", ChatClashConfig.CHATCLASH_SUBCONVERTER_URL),
+        home=_value("CHATCLASH_HOME", values) or str(get_paths().home_dir / "chatclash"),
+        subscription_url=_value("CHATCLASH_SUBSCRIPTION_URL", values),
+        proxy_auth=_value("CHATCLASH_PROXY_AUTH", values),
+        subconverter_url=_value("CHATCLASH_SUBCONVERTER_URL", values),
     )
 
 
@@ -59,7 +60,6 @@ def write_operator_config(
             changed.append(key)
     if changed:
         store.save_active(ChatClashConfig, values)
-        load_chatenv()
     return changed
 
 

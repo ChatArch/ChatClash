@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.9
+
+- 新安装的 HTTP/SOCKS 代理默认只绑定 loopback；任何 LAN/非 loopback 生成在缺少 `CHATCLASH_PROXY_AUTH` 时会失败并保留原配置。
+- 新生成的 Mihomo 配置将无 secret 的 controller 固定绑定至 `127.0.0.1:<port>`，避免默认 `:<port>` 的网络暴露；旧配置须通过订阅更新或其他生成操作后显式重载/重启才迁移。
+- `proxy env` 现在对每个导出值使用 POSIX shell quoting；配合文档中的非回显子 shell，避免本地端点文本被当作额外 shell 语法。
+
+- 修复默认运行目录未继承 `CHATARCH_HOME`、profile 中 `~` 路径未展开的问题；只读取 ChatClash active profile，避免反复加载其他服务的配置。
+- 订阅更新改为在同目录私有临时文件中生成和校验，校验通过后备份并原子替换；`sub generate` 和活动配置重渲染也采用原子替换。校验或替换失败保留当前配置，缺失 Mihomo 时不再静默跳过校验。
+- ChatEnv 依赖基线更新为 `>=0.2.11,<0.3.0`，保留 ChatStyle `>=0.2.0,<0.3.0` 的真实 CLI 树要求；新增依赖一致性、wheel 安装和 provider 发现验证。
+- 完善中英文安装、依赖冲突排查、ChatEnv 配置和服务运维文档，区分 Python CLI、Mihomo 引擎、systemd、订阅生成与热加载。
+- 扩充配置优先级、隔离 HOME、profile 切换、订阅失败保护等回归测试。
+
 ## 0.1.8 - 2026-08-21
 
 - Replace the package-local CLI tree renderer with ChatStyle's registered Click tree runtime.

@@ -20,7 +20,7 @@ from .utils import load_yaml_file, write_yaml_file
 
 def chatclash_home() -> Path:
     home = read_operator_config().home
-    return Path(home) if home else Path.home() / ".chatarch" / "chatclash"
+    return Path(home).expanduser().resolve()
 
 
 def local_config_path() -> Path:
@@ -109,7 +109,7 @@ def initialize_home(*, home: Path | None = None, dry_run: bool = False) -> InitR
     config_path = target / "config.yaml"
     if not config_path.exists():
         config_path.write_text(
-            "port: 7890\nsocks-port: 7891\nallow-lan: true\nmode: Rule\nlog-level: info\nrules:\n  - MATCH,DIRECT\n",
+            "port: 7890\nsocks-port: 7891\nallow-lan: false\nbind-address: 127.0.0.1\nmode: Rule\nlog-level: info\nrules:\n  - MATCH,DIRECT\n",
             encoding="utf-8",
         )
     return InitResult(home=root, clash_dir=target, changed=["home", "config", "clash_config"])

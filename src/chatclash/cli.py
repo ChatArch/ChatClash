@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 from pathlib import Path
 from typing import Iterable
 
@@ -47,6 +48,7 @@ from .subscription import (
     render_active_config_from_local,
     set_subscription_config,
     update_subscription_config,
+    validate_listener_security,
 )
 from .utils import mask
 
@@ -482,7 +484,7 @@ def proxy_env(no_mask: bool, interactive: bool | None) -> None:
     if auth.present and not no_mask:
         click.echo("# auth is configured; run `chatclash proxy env --no-mask` to output usable authenticated proxy URLs")
     for key, value in get_proxy_env(include_auth=True, no_mask=no_mask).items():
-        click.echo(f"export {key}={value}")
+        click.echo(f"export {key}={shlex.quote(value)}")
 
 
 @proxy_group.command(name="set")
@@ -514,7 +516,7 @@ def proxy_set(
             http_port_value = click.prompt("HTTP port", type=int, default=http_port_value or int(config.get("http_port") or 7890))
             socks_port_value = click.prompt("SOCKS port", type=int, default=socks_port_value or int(config.get("socks_port") or 7891))
             controller_port_value = click.prompt("Controller port", type=int, default=controller_port_value or int(config.get("controller_port") or 9090))
-            bind_host = click.prompt("Bind host", default=bind_host or str(config.get("bind_host") or "0.0.0.0"))
+            bind_host = click.prompt("Bind host", default=bind_host or str(config.get("bind_host") or "127.0.0.1"))
             proxy_host_value = click.prompt("Proxy host", default=proxy_host_value or str(config.get("proxy_host") or "127.0.0.1"))
         else:
             _resolve_no_input_interactive(interactive)
@@ -526,6 +528,10 @@ def proxy_set(
             "proxy_host": proxy_host_value,
         }
         changed = [key for key, value in provided.items() if value is not None and config.get(key) != value]
+        candidate_config = dict(config)
+        candidate_config.update({key: value for key, value in provided.items() if value is not None})
+        if changed or dry_run:
+            validate_listener_security(candidate_config)
         if dry_run:
             render_result = render_active_config_from_local(dry_run=True)
         else:

@@ -32,6 +32,10 @@ def test_ci_workflow_runs_docs_build_and_installed_cli_smoke():
     assert "chatclash --version" in workflow
     assert "chatclash --tree" in workflow
     assert "chatclash --tree-brief" in workflow
+    assert "python -m pip check" in workflow
+    assert "Built wheel and ChatEnv provider smoke" in workflow
+    assert "chatenv" in workflow and '"list", "-t", "chatclash"' in workflow
+    assert "python -m twine check dist/*" in workflow
 
 
 def test_docs_workflows_use_chatarch_public_domain_and_root_deploy():

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from chatenv import BaseEnvConfig, EnvField
 
 
@@ -16,8 +14,7 @@ class ChatClashConfig(BaseEnvConfig):
 
     CHATCLASH_HOME = EnvField(
         "CHATCLASH_HOME",
-        default=str(Path.home() / ".chatarch" / "chatclash"),
-        desc="Machine-local ChatClash runtime directory.",
+        desc="Machine-local runtime directory; defaults to <CHATARCH_HOME>/chatclash when unset.",
     )
     CHATCLASH_SUBSCRIPTION_URL = EnvField(
         "CHATCLASH_SUBSCRIPTION_URL",

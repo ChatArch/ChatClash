@@ -222,6 +222,31 @@ def test_proxy_set_rerenders_active_config_and_runtime_commands_are_explicit(tmp
     assert "PUT /configs" in reload_result.output
 
 
+def test_status_reports_the_active_controller_endpoint(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    init = runner.invoke(main, ["init", "--local-only", "-I", "-y"])
+    assert init.exit_code == 0, init.output
+    configured = runner.invoke(main, ["proxy", "set", "--controller-port", "19090", "-I", "-y"])
+    assert configured.exit_code == 0, configured.output
+    active_path = home / "clash" / "config.yaml"
+    active = yaml.safe_load(active_path.read_text(encoding="utf-8"))
+    active["external-controller"] = "127.0.0.1:19999"
+    active_path.write_text(yaml.safe_dump(active, sort_keys=False), encoding="utf-8")
+
+    status = runner.invoke(main, ["status", "-I"])
+
+    assert status.exit_code == 0, status.output
+    assert "controller: 127.0.0.1:19999" in status.output
+
+    del active["external-controller"]
+    active_path.write_text(yaml.safe_dump(active, sort_keys=False), encoding="utf-8")
+    fallback_status = runner.invoke(main, ["status", "-I"])
+    assert fallback_status.exit_code == 0, fallback_status.output
+    assert "controller: 127.0.0.1:19090" in fallback_status.output
+
+
 def test_proxy_set_rejects_unauthenticated_lan_before_local_or_active_config_change(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     home = tmp_path / "chatclash-home"

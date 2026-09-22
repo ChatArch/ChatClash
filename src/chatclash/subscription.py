@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import datetime as dt
+import ipaddress
+import os
+import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -11,7 +14,7 @@ from typing import Any
 import yaml
 
 from .chatenv_store import operator_status, read_operator_config, write_operator_config
-from .constants import DEFAULT_SUBCONVERTER_CONFIG_URL
+from .constants import DEFAULT_CONTROLLER_HOST, DEFAULT_SUBCONVERTER_CONFIG_URL
 from .paths import bind_host, clash_dir, controller_port, http_port, read_local_config, socks_port
 from .utils import clean, mask, run_shell
 
@@ -87,15 +90,36 @@ def _fetch_url(url: str, *, timeout: int = 60, proxy: str | None = None) -> str:
         return response.read().decode("utf-8")
 
 
+def _is_loopback_host(value: str) -> bool:
+    host = value.strip().strip("[]")
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def validate_listener_security(config: dict[str, Any]) -> None:
+    """Fail before a caller persists an unauthenticated non-loopback listener."""
+    _header(config, read_operator_config().proxy_auth)
+
+
 def _header(config: dict[str, Any], proxy_auth: str | None) -> dict[str, Any]:
+    listener_host = bind_host(config)
+    allow_lan = not _is_loopback_host(listener_host)
+    if allow_lan and not proxy_auth:
+        raise ValueError(
+            "proxy authentication is required for a non-loopback bind; configure CHATCLASH_PROXY_AUTH or bind 127.0.0.1"
+        )
     data: dict[str, Any] = {
         "port": http_port(config),
         "socks-port": socks_port(config),
-        "allow-lan": True,
-        "bind-address": bind_host(config),
+        "allow-lan": allow_lan,
+        "bind-address": listener_host,
         "mode": "Rule",
         "log-level": "info",
-        "external-controller": f":{controller_port(config)}",
+        "external-controller": f"{DEFAULT_CONTROLLER_HOST}:{controller_port(config)}",
     }
     if proxy_auth:
         data["authentication"] = [proxy_auth]
@@ -214,8 +238,7 @@ def render_active_config_from_local(*, dry_run: bool = False) -> dict[str, Any]:
     if dry_run:
         return result
     _backup(target)
-    target.write_text(rendered, encoding="utf-8")
-    target.chmod(0o600)
+    _atomic_write_private_text(target, rendered)
     return result
 
 
@@ -229,6 +252,22 @@ def _backup(path: Path) -> Path | None:
     target.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     target.chmod(0o600)
     return target
+
+
+def _atomic_write_private_text(target: Path, text: str) -> None:
+    """Replace a private YAML output only after its temporary file is durable."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, name = tempfile.mkstemp(prefix=".chatclash-", suffix=".yaml", dir=target.parent)
+    staged = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        staged.chmod(0o600)
+        os.replace(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)
 
 
 def generate_subscription_config(
@@ -249,9 +288,7 @@ def generate_subscription_config(
     parsed = yaml.safe_load(merged) or {}
     result = {"output": str(output), "dry_run": dry_run, "proxies": len(parsed.get("proxies") or [])}
     _backup(output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(merged, encoding="utf-8")
-    output.chmod(0o600)
+    _atomic_write_private_text(output, merged)
     return result
 
 
@@ -278,15 +315,22 @@ def update_subscription_config(*, dry_run: bool = False, no_validate: bool = Fal
     merged = _merge_config(remote_text, config=config, proxy_auth=op.proxy_auth)
     target = clash_dir(config) / "config.yaml"
     result = {"target": str(target), "dry_run": dry_run, "validated": False}
-    if dry_run:
-        return result
-    _backup(target)
+    engine = Path(str(config.get("engine_path") or "mihomo"))
+    if not no_validate and not engine.is_file():
+        raise ValueError("Mihomo is not installed; run mihomo install or explicitly pass --no-validate")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(merged, encoding="utf-8")
-    target.chmod(0o600)
-    if not no_validate:
-        engine = Path(str(config.get("engine_path") or "mihomo"))
-        if engine.exists():
-            run_shell([str(engine), "-t", "-d", str(target.parent)])
+    fd, name = tempfile.mkstemp(prefix=".chatclash-", suffix=".yaml", dir=target.parent)
+    staged = Path(name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(merged)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if not no_validate:
+            run_shell([str(engine), "-t", "-d", str(target.parent), "-f", str(staged)])
             result["validated"] = True
+        _backup(target)
+        os.replace(staged, target)
+    finally:
+        staged.unlink(missing_ok=True)
     return result

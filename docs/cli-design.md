@@ -1,46 +1,35 @@
-# ChatClash CLI design
+# CLI 设计与边界
 
-ChatClash is a single-machine Mihomo management CLI. It does not orchestrate remote machines and does not expose historical implementation paths as normal user commands.
+ChatClash 是**当前机器**的 Mihomo 管理 CLI。它保存配置、生成配置文件并调用本机服务控制；不编排远程机器，也不把 Python CLI 作为常驻代理进程。
 
-## Registered command tree
-
-The explicit `chatclash` root uses ChatStyle's shared registered-tree renderer:
+## 注册命令
 
 ```bash
-chatclash --tree        # full command and option signatures
-chatclash --tree-brief  # the same groups and leaves without signatures
+chatclash --tree        # 带参数签名的完整树
+chatclash --tree-brief  # 相同节点的简版树
 ```
 
-Both views traverse the live Click registry rather than a package-local renderer. The current full output is maintained in [CLI Tree](cli-tree.md).
+两个视图都从实际 Click 注册表生成。完整输出以 [CLI 树](cli-tree.md) 为准；文档不把规划能力伪装成可执行命令。
 
-## Responsibilities
+## 职责地图
 
-- `init`: create the machine-local ChatClash home and starter runtime config.
-- `status`: summarize local runtime, config, subscription, ports, and backup state without printing secrets.
-- `sub`: manage subscription-backed config through ChatEnv and config-generation APIs.
-- `proxy`: manage machine-local listener/endpoint settings and shell proxy exports.
-- `mihomo`: install, update, start, stop, restart, inspect, and read logs for the local Mihomo runtime.
+| 命令组 | 负责什么 | 不做什么 |
+| --- | --- | --- |
+| `init` | 建立本机运行目录和起始配置，必要时写入当前 ChatEnv 配置 | 不启动引擎、不替代已有部署的升级流程 |
+| `sub` | 保存订阅设置、生成或更新候选 YAML | 更新文件后不自动重载运行中的引擎 |
+| `proxy` | 修改本机监听参数、校验配置、提供代理端点信息 | 不管理 controller 的认证或绑定策略 |
+| `mihomo` | 安装、更新、启动、停止、重启和检查本机引擎 | 不升级 Python CLI 或远程服务 |
+| `status` | 读取本机运行、配置和备份摘要 | 不证明外部网络连通性 |
 
-## Config ownership
+## 配置与状态归属
 
-ChatEnv stores operator-owned values:
+ChatEnv 保存操作者配置：`CHATCLASH_HOME`、订阅地址、代理认证和可选转换器地址。机器本地 `config.yaml` 保存端口、监听主机、二进制和日志路径；`clash/config.yaml` 是 Mihomo 实际读取的生成文件。
 
-- `CHATCLASH_HOME`
-- `CHATCLASH_SUBSCRIPTION_URL`
-- `CHATCLASH_PROXY_AUTH`
-- `CHATCLASH_SUBCONVERTER_URL`
+进程 `CHATCLASH_*` 环境变量优先于活动 ChatEnv 配置。切换 ChatEnv profile 不迁移文件，也不会让正在运行的 Mihomo 自动读取新值。详细字段和路径见[配置与 ChatEnv](configuration.md)。
 
-Machine-local config stores runtime layout and local listener facts:
+## Python API 边界
 
-- runtime config directory under `CHATCLASH_HOME`
-- Mihomo binary path
-- PID/log/cache paths
-- HTTP/SOCKS/controller ports
-- bind host and advertised proxy host
-
-## Python API boundary
-
-The CLI is a thin adapter over importable Python APIs:
+CLI 只是薄适配层。可复用的行为位于：
 
 - `chatclash.subscription`
 - `chatclash.proxy`
@@ -49,69 +38,15 @@ The CLI is a thin adapter over importable Python APIs:
 - `chatclash.status`
 - `chatclash.paths`
 
-Command behavior should be shared through these modules, not by calling Click command callbacks.
+其他 Python 调用方应调用这些模块，而不是调用 Click 回调函数。
 
-## Security
+## 已部署服务
 
-Do not print raw subscription URLs, proxy credentials, tokens, cookies, private keys, or private workspace paths. Tests may use obvious dummy values only when they assert redaction behavior.
+用户级 `chatclash-mihomo.service` 直接执行独立 Mihomo 二进制。CLI 包升级不会替换或重启该引擎；订阅更新也必须在校验后显式 `mihomo reload` 或 `mihomo restart` 才会作用于运行中的服务。具体操作顺序见[运行与维护](operations.md#service)。
 
+## 安全与验证
 
-## ChatEnv integration checks
-
-ChatClash registers its operator config as a ChatEnv provider. A clean install should support:
-
-```bash
-chatenv cat -t chatclash
-chatenv test -t chatclash
-```
-
-`cat` must show ChatClash operator fields with sensitive values masked. `test` must validate the current local proxy path through ChatClash's proxy check API rather than only checking schema presence.
-
-`chatclash init` follows the shared ChatStyle interactive option pattern: `-i` forces interactive confirmation, `-I` disables prompting for automation, and `-y/--yes` skips the write confirmation.
-
-
-
-## Local subscription converter service
-
-`chatclash sub converter` manages the local subscription converter service used by `CHATCLASH_SUBCONVERTER_URL`. Host and port are service runtime parameters, not ChatEnv fields.
-
-```bash
-chatclash sub converter install
-chatclash sub converter start              # default http://127.0.0.1:25500
-chatclash sub converter start --host 0.0.0.0 --port 26666
-chatclash sub converter status
-chatclash sub converter logs --tail 200
-chatclash sub converter stop
-```
-
-After starting a local converter, store its base URL through ChatEnv when this machine should use it for subscription conversion:
-
-```bash
-chatenv set CHATCLASH_SUBCONVERTER_URL='http://127.0.0.1:25500'
-chatclash sub url --show -I
-chatclash sub update
-```
-
-When `CHATCLASH_SUBCONVERTER_URL` is configured, `chatclash sub generate` and `chatclash sub update` use the converter endpoint to regenerate the local Mihomo config. The generated `config.yaml` is a machine-local artifact: do not copy it between machines. To refresh another host, configure that host's subscription/converter settings and run generation there.
-
-The converter request follows the original ACL4SSR/SubConverter contract (`target=clash`, `insert=false`, `new_name=true`, and related compatibility flags). Some providers return node-only YAML; ChatClash composes the local listener header, authentication, default groups, and rules around those generated nodes.
-
-
-## Authentication and ChatEnv
-
-All public commands expose the shared ChatStyle `-i/-I` interactive option. For first-time machine setup, run `chatclash init` interactively, or pass values explicitly for automation:
-
-```bash
-chatclash init --url-env CHATCLASH_SUBSCRIPTION_URL --proxy-auth-env CHATCLASH_PROXY_AUTH -I
-chatclash proxy show              # masked
-chatclash proxy show --no-mask    # shows authenticated proxy URLs
-chatclash proxy env --no-mask     # usable authenticated http_proxy/https_proxy/all_proxy exports
-```
-
-ChatEnv remains the system of record:
-
-```bash
-chatenv cat -t chatclash
-chatenv cat -t chatclash --no-mask
-chatenv test -t chatclash
-```
+- `proxy show`、`proxy env` 和 `chatenv cat` 默认脱敏。带认证的导出只可在[非回显子 shell](operations.md#proxy-env)中消费。
+- 新生成配置将无 secret 的 controller 绑定至 `127.0.0.1:<port>`；旧 `:<port>` 或外部绑定配置需要刷新生成文件后才会迁移。
+- `proxy validate` 检查本机 YAML；`chatenv test -t chatclash` 发起真实代理请求；服务运行状态本身不等于连通性。
+- 订阅、认证、生成 YAML 和备份都可能含秘密，不应跨机器复制或贴入 issue。

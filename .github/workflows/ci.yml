@@ -24,6 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev,docs]"
+      - run: python -m pip check
       - run: python -m pytest -q
       - name: Installed CLI smoke
         run: |
@@ -31,4 +32,20 @@ jobs:
           chatclash --tree
           chatclash --tree-brief
       - run: python -m build
+      - run: python -m twine check dist/*
+      - name: Built wheel and ChatEnv provider smoke
+        run: |
+          python - <<'PY'
+          import glob, os, subprocess, sys
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "chatclash-wheel"
+          subprocess.check_call([sys.executable, "-m", "venv", str(root)])
+          python = root / "bin/python"
+          subprocess.check_call([str(python), "-m", "pip", "install", *glob.glob("dist/*.whl")])
+          subprocess.check_call([str(python), "-m", "pip", "check"])
+          env = os.environ.copy()
+          env["CHATARCH_HOME"] = str(root / "test-home")
+          for cli, args in [("chatclash", ["--version"]), ("chatclash", ["--tree"]), ("chatclash", ["--tree-brief"]), ("chatenv", ["list", "-t", "chatclash"])]:
+              subprocess.check_call([str(root / "bin" / cli), *args], cwd=root, env=env)
+          PY
       - run: mkdocs build --strict

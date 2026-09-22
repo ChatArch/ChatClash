@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shlex
 import threading
 import urllib.parse
 from pathlib import Path
@@ -9,6 +10,7 @@ import yaml
 from click.testing import CliRunner
 
 from chatclash.cli import main
+from chatclash.proxy import get_proxy_env
 
 
 OLD_TOP_LEVEL = {
@@ -144,6 +146,27 @@ def test_init_status_proxy_show_and_env_use_machine_local_config(tmp_path, monke
     assert "http_proxy: http://127.0.0.1:7890" in status.output
 
 
+
+def test_proxy_env_uses_posix_shell_quoting_for_all_export_values(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    init = runner.invoke(
+        main,
+        [
+            "init", "--home", str(home), "--subscription-url", "https://example.invalid/sub",
+            "--proxy-auth", "user:secret-pass", "-I",
+        ],
+    )
+    assert init.exit_code == 0, init.output
+    changed = runner.invoke(main, ["proxy", "set", "--proxy-host", "127.0.0.1;not-a-command", "-I", "-y"])
+    assert changed.exit_code == 0, changed.output
+    rendered = runner.invoke(main, ["proxy", "env", "--no-mask", "-I"])
+    assert rendered.exit_code == 0, rendered.output
+    for key, value in get_proxy_env(include_auth=True, no_mask=True).items():
+        assert f"export {key}={shlex.quote(value)}" in rendered.output
+
+
 def test_proxy_set_rerenders_active_config_and_runtime_commands_are_explicit(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     home = tmp_path / "chatclash-home"
@@ -171,7 +194,7 @@ def test_proxy_set_rerenders_active_config_and_runtime_commands_are_explicit(tmp
         ],
     )
     assert result.exit_code == 0, result.output
-    assert "updated: http_port, socks_port, controller_port, bind_host, proxy_host" in result.output
+    assert "updated: http_port, socks_port, controller_port, proxy_host" in result.output
     assert "chatclash mihomo restart" in result.output
 
     local = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8"))
@@ -185,7 +208,7 @@ def test_proxy_set_rerenders_active_config_and_runtime_commands_are_explicit(tmp
     assert active["port"] == 18080
     assert active["socks-port"] == 18081
     assert active["bind-address"] == "127.0.0.1"
-    assert active["external-controller"] == ":19090"
+    assert active["external-controller"] == "127.0.0.1:19090"
     assert active["rules"] == ["MATCH,DIRECT"]
 
     validate = runner.invoke(main, ["proxy", "validate", "--dry-run"])
@@ -197,6 +220,50 @@ def test_proxy_set_rerenders_active_config_and_runtime_commands_are_explicit(tmp
     assert reload_result.exit_code == 0, reload_result.output
     assert "controller: http://127.0.0.1:19090/configs" in reload_result.output
     assert "PUT /configs" in reload_result.output
+
+
+def test_status_reports_the_active_controller_endpoint(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    init = runner.invoke(main, ["init", "--local-only", "-I", "-y"])
+    assert init.exit_code == 0, init.output
+    configured = runner.invoke(main, ["proxy", "set", "--controller-port", "19090", "-I", "-y"])
+    assert configured.exit_code == 0, configured.output
+    active_path = home / "clash" / "config.yaml"
+    active = yaml.safe_load(active_path.read_text(encoding="utf-8"))
+    active["external-controller"] = "127.0.0.1:19999"
+    active_path.write_text(yaml.safe_dump(active, sort_keys=False), encoding="utf-8")
+
+    status = runner.invoke(main, ["status", "-I"])
+
+    assert status.exit_code == 0, status.output
+    assert "controller: 127.0.0.1:19999" in status.output
+
+    del active["external-controller"]
+    active_path.write_text(yaml.safe_dump(active, sort_keys=False), encoding="utf-8")
+    fallback_status = runner.invoke(main, ["status", "-I"])
+    assert fallback_status.exit_code == 0, fallback_status.output
+    assert "controller: 127.0.0.1:19090" in fallback_status.output
+
+
+def test_proxy_set_rejects_unauthenticated_lan_before_local_or_active_config_change(tmp_path, monkeypatch):
+    _clean_env(monkeypatch, tmp_path)
+    home = tmp_path / "chatclash-home"
+    runner = CliRunner()
+    init = runner.invoke(main, ["init", "--local-only", "-I", "-y"])
+    assert init.exit_code == 0, init.output
+    local_path = home / "config.yaml"
+    active_path = home / "clash" / "config.yaml"
+    original_local = local_path.read_bytes()
+    original_active = active_path.read_bytes()
+
+    result = runner.invoke(main, ["proxy", "set", "--bind-host", "0.0.0.0", "-I", "-y"])
+
+    assert result.exit_code != 0
+    assert "proxy authentication is required" in result.output
+    assert local_path.read_bytes() == original_local
+    assert active_path.read_bytes() == original_active
 
 
 def test_sub_set_status_uses_chatenv_and_masks_output(tmp_path, monkeypatch):
@@ -405,7 +472,7 @@ def test_sub_generate_writes_config_and_backup(tmp_path, monkeypatch):
     assert parsed["authentication"] == ["user:secret-pass"]
     assert parsed["port"] == 7890
     assert parsed["socks-port"] == 7891
-    assert parsed["external-controller"] == ":9090"
+    assert parsed["external-controller"] == "127.0.0.1:9090"
     assert parsed["proxies"][0]["name"] == "direct-node"
     assert stat.S_IMODE(output.stat().st_mode) == 0o600
     backups = list((tmp_path / "backups").glob("config.yaml.*.bak"))
@@ -565,7 +632,7 @@ def test_sub_update_fetches_direct_yaml_preserves_auth_and_writes_backup(tmp_pat
     assert clash_config["authentication"] == ["user:secret-pass"]
     assert clash_config["port"] == 7890
     assert clash_config["socks-port"] == 7891
-    assert clash_config["external-controller"] == ":9090"
+    assert clash_config["external-controller"] == "127.0.0.1:9090"
     assert clash_config["proxies"][0]["name"] == "direct-node"
     assert list((home / "clash" / "backups").glob("config.yaml.*.bak"))
 
@@ -765,7 +832,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.8" in result.output
+    assert "0.1.9" in result.output
 
 
 def test_top_level_help_mentions_shared_tree_options():

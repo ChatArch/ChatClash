@@ -1,31 +1,59 @@
-<div align="center">
-    <a href="https://pypi.python.org/pypi/chatclash">
-        <img src="https://img.shields.io/pypi/v/chatclash.svg" alt="PyPI version" />
-    </a>
-</div>
+# ChatClash
 
-# chatclash
+ChatClash is a single-machine ChatArch proxy toolkit: a Python CLI manages the separate Linux Mihomo engine, stores operator configuration through ChatEnv, generates subscription YAML, and validates the proxy. It neither orchestrates remote hosts nor runs the proxy as a persistent Python service.
 
-ChatArch single-machine proxy toolkit for Mihomo runtime management, subscription-backed config generation, and ChatEnv-backed proxy validation.
+[Documentation](https://arch.gh.wzhecnu.cn/ChatClash/en/) · [Chinese edition](README.md) · [PyPI](https://pypi.org/project/chatclash/) · [Issues](https://github.com/ChatArch/ChatClash/issues)
 
-## Quick Start
+## Choose a scenario
+
+| Goal | Start here |
+| --- | --- |
+| Install/upgrade the CLI or resolve dependency conflicts | [Installation and Dependencies](docs/installation.en.md) |
+| Set subscription, authentication, home, or profiles | [Configuration and ChatEnv](docs/configuration.en.md) |
+| Refresh subscriptions, reload configuration, upgrade the engine | [Operations](docs/operations.en.md) |
+| Use an authenticated proxy for one command | [Safe proxy exports](docs/operations.en.md#proxy-env) |
+| Find commands, options, and boundaries | [CLI Tree](docs/cli-tree.en.md) · [Design](docs/cli-design.en.md) |
+
+## Install and deploy
+
+Complete standard `chatuv setup` first. Use the same virtual environment's interpreter rather than mixing system and user installations:
 
 ```bash
-pip install -e ".[dev]"
-chatclash init
-chatclash sub set -i
+~/.chatarch/venv/bin/python -m pip install -U chatclash
+~/.chatarch/venv/bin/python -m pip check
+~/.chatarch/venv/bin/chatclash --version
+```
+
+ChatClash and ChatEnv must share an interpreter. Legacy applications requiring `chatstyle<0.2` can conflict with the required ChatStyle 0.2 series. Upgrade compatible packages selectively or isolate legacy environments; do not downgrade ChatStyle or use `--no-deps`.
+
+The following assumes that environment's `bin` is on `PATH` and targets Linux user-level systemd. **New HTTP/SOCKS installations bind only to loopback; changing to a LAN/non-loopback listener requires configured proxy authentication. Generated configuration still binds the controller only to `127.0.0.1:9090`, but it has no secret and proxy authentication does not protect it. Older configuration can still use `:9090` or another external bind: refresh generated configuration after upgrading and restrict management access.**
+
+```bash
+chatclash init -i
 chatclash mihomo install --daemon
-chatclash sub update
-chatclash mihomo start
-chatclash status
-chatclash --tree
-chatclash --tree-brief
+chatclash sub update -I
+chatclash proxy validate -I
+chatclash mihomo start -I
+chatclash status -I
 chatenv test -t chatclash
 ```
 
+`init` is not an existing deployment's upgrade command. `install --daemon` does not start the service. `chatenv test` performs online proxy checks. See the [converter procedure](docs/operations.en.md#converter) when needed.
+
+## Which layer changes?
+
+| Operation | Result | Explicit follow-up |
+| --- | --- | --- |
+| pip upgrade of `chatclash` | Updates Python CLI | Does not replace/restart the engine |
+| `mihomo update` | Replaces engine binary | Validate, then `mihomo restart` |
+| `sub update` | Validates candidate and replaces YAML | `proxy validate`, then `mihomo reload` |
+| `init` / `sub set` / ChatEnv writes | Changes persistent configuration | Generate/apply as needed; no automatic reload |
+
+The default root is `~/.chatarch/chatclash`; precedence is process environment > active ChatEnv profile > defaults. `proxy show`, `proxy env`, and `chatenv cat` mask secrets by default. Masked exports are display-only; consume authenticated exports only in a [non-echoing subshell](docs/operations.en.md#proxy-env).
+
 ## CLI tree
 
-`chatclash --tree` renders signatures from the registered Click commands. The compact `chatclash --tree-brief` view keeps the same nodes:
+`chatclash --tree` renders full registered signatures; `chatclash --tree-brief` omits signatures. The brief output is preserved below; see the [full tree and command groups](docs/cli-tree.en.md#groups).
 
 ```text
 chatclash
@@ -63,65 +91,4 @@ chatclash
     ├── status  # Show redacted subscription config state.
     ├── update  # Refresh the runtime config from the configured subscription.
     └── url  # Build a subconverter URL for the configured subscription.
-```
-
-## Common commands
-
-```bash
-chatclash sub status
-chatclash sub url "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500
-chatclash sub generate "$SUBSCRIPTION_URL" -s http://127.0.0.1:25500 -o <OUTPUT_CONFIG> -y
-chatclash proxy show
-eval "$(chatclash proxy env)"
-python -m pytest -q
-```
-
-## ChatArch conventions
-
-- CLI interaction and registered full/brief tree rendering use ChatStyle, including the shared `-i/-I` pattern where applicable.
-- Operator config and `CHATCLASH_HOME` are stored through ChatEnv; local config stores only derived runtime facts.
-- Major CLI capabilities have reusable Python APIs under `src/chatclash/` modules.
-- Sensitive values must not be printed in CLI output, logs, docs, or tests.
-
-
-
-## Local subscription converter service
-
-`chatclash sub converter` manages the local subscription converter service used by `CHATCLASH_SUBCONVERTER_URL`. Host and port are service runtime parameters, not ChatEnv fields.
-
-```bash
-chatclash sub converter install
-chatclash sub converter start              # default http://127.0.0.1:25500
-chatclash sub converter start --host 0.0.0.0 --port 26666
-chatclash sub converter status
-chatclash sub converter logs --tail 200
-chatclash sub converter stop
-```
-
-After starting a local converter, store its base URL through ChatEnv when this machine should use it for subscription conversion:
-
-```bash
-chatenv set CHATCLASH_SUBCONVERTER_URL='http://127.0.0.1:25500'
-chatclash sub url --show -I
-chatclash sub update
-```
-
-
-## Authentication and ChatEnv
-
-All public commands expose the shared ChatStyle `-i/-I` interactive option. For first-time machine setup, run `chatclash init` interactively, or pass values explicitly for automation:
-
-```bash
-chatclash init --url-env CHATCLASH_SUBSCRIPTION_URL --proxy-auth-env CHATCLASH_PROXY_AUTH -I
-chatclash proxy show              # masked
-chatclash proxy show --no-mask    # shows authenticated proxy URLs
-chatclash proxy env --no-mask     # usable authenticated http_proxy/https_proxy/all_proxy exports
-```
-
-ChatEnv remains the system of record:
-
-```bash
-chatenv cat -t chatclash
-chatenv cat -t chatclash --no-mask
-chatenv test -t chatclash
 ```

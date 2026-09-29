@@ -18,7 +18,7 @@ ChatClash is a Python management CLI; Mihomo is a separate binary. The user-leve
 
 This illustrates the execution relationship; do not launch another engine alongside an existing service. Upgrading the Python package neither replaces nor restarts the engine. `mihomo update` replaces the on-disk binary without restarting. ChatEnv writes, `init`, and `sub set` do not update the running engine's configuration.
 
-`install --daemon` writes/enables a user unit without starting it. With that unit present, `start`, `stop`, and `restart` use `systemctl --user`; without it, `start` directly runs the engine and can occupy the foreground. Service lifecycle support targets Linux, not cross-platform service management.
+On Linux, `install --daemon` writes/enables a user unit without starting it. With that unit present, `start`, `stop`, and `restart` use `systemctl --user`; without it, `start` directly runs the engine and can occupy the foreground. On Windows, ChatClash manages a background process, PID identity, and logs in the current user's directory: `start` succeeds only after the loopback HTTP port listens, and `stop` checks the executable path and creation time before terminating a PID, avoiding a reused unrelated PID.
 
 ## Refresh a subscription {#subscription}
 
@@ -66,6 +66,27 @@ chatclash mihomo logs --tail 100 -I
 
 In systemd mode, `logs` displays the service status with attached log lines, not a complete historical journal query. If needed, use `journalctl --user -u chatclash-mihomo.service -n 100 --no-pager` locally; inspect/redact raw logs before sharing. A running `status` is not proof of connectivity. `proxy validate` checks configuration; `chatenv test` makes real requests to external test sites.
 
+## Windows current-user proxy {#windows}
+
+Windows installation selects the matching Mihomo ZIP (x64/arm64). No administrator rights, Windows service, TUN, or machine-wide proxy is needed. Configure, validate, and start the engine before changing the system proxy:
+
+```powershell
+chatclash mihomo install -I
+chatclash proxy validate -I
+chatclash mihomo start -I
+chatclash proxy system show -I
+chatclash proxy system enable -I
+chatenv test -t chatclash
+```
+
+`enable` only routes Windows through a listening loopback HTTP port; it never points the system proxy at an unready port. The first enable saves manual current-user proxy values and the effective WinINet connection flags (including PAC/WPAD auto-detect) in a private backup, then switches WinINet to manual proxy and refreshes it; repeated enables retain the original backup. After interruption, startup failure, or a failed network check, restore explicitly:
+
+```powershell
+chatclash proxy system disable -I
+```
+
+This restores the saved values and removes the backup; without a backup it changes nothing. A corrupt or incomplete backup is rejected rather than restoring unknown settings as empty values. `proxy system show` masks the current server value and reads PAC/auto-detect from effective WinINet flags, together with backup and listener readiness.
+
 ## Use proxy exports safely {#proxy-env}
 
 ```bash
@@ -84,6 +105,14 @@ Default masked output is for display, not executable authenticated exports. Cons
 ```
 
 The parent shell's environment remains unchanged when the subshell exits. Do not print unmasked exports separately, run `env`/`printenv`, enable `set -x`, or use verbose request logging. Do not redirect exports into documentation or tickets. Replace the example test site with a trusted target if needed. Secrets still exist in child-process environments; this is not a security isolation boundary on a multi-user host.
+
+For a temporary Windows PowerShell session, use equivalent non-persistent output:
+
+```powershell
+chatclash proxy env --shell powershell -I
+```
+
+Paste it into the current PowerShell; closing that window clears it. Use `--persist --no-mask` only when storing authentication in current-user variables is intentional. It also requires a ready local HTTP listener and first backs up `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, and `NO_PROXY`; restore with `chatclash proxy env --restore -I`. Do not persist authenticated proxy URLs in a shared Windows account.
 
 ## Optional subscription converter {#converter}
 

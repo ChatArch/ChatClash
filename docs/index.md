@@ -75,6 +75,10 @@ chatclash
 │   ├── env  # Print shell proxy environment exports.
 │   ├── set  # Update local proxy listener settings and re-render active config.
 │   ├── show  # Show proxy endpoints for this machine.
+│   ├── system  # Manage the Windows current-user system proxy with backup and restore.
+│   │   ├── disable  # Restore the Windows current-user proxy settings saved at enable time.
+│   │   ├── enable  # Enable Windows proxy for the ready local loopback HTTP listener.
+│   │   └── show  # Show Windows current-user proxy status without changing it.
 │   └── validate  # Validate the current active Mihomo config.
 ├── status  # Show this machine's ChatClash status.
 └── sub  # Manage subscription-backed runtime config.

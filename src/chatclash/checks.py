@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import urllib.parse
+import os
 
 from .chatenv_store import read_operator_config
 from .constants import DEFAULT_CHECK_URLS
@@ -28,7 +29,7 @@ def check_proxy(*, urls: tuple[str, ...] | None = None, min_success: int = 2, ti
     items: list[CheckItem] = []
     for url in urls:
         try:
-            code = run_shell(["curl", "-fsSL", "--max-time", str(timeout), "--proxy", proxy, "-o", "/dev/null", "-w", "%{http_code}", url])
+            code = run_shell(["curl", "-fsSL", "--max-time", str(timeout), "--proxy", proxy, "-o", os.devnull, "-w", "%{http_code}", url])
             items.append(CheckItem(url=url, ok=True, detail=code.strip()))
         except Exception as exc:
             items.append(CheckItem(url=url, ok=False, detail=str(exc)))

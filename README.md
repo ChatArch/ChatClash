@@ -1,6 +1,6 @@
 # ChatClash
 
-ChatClash 是 ChatArch 的单机代理管理工具：用 Python CLI 管理独立的 Linux Mihomo 引擎，通过 ChatEnv 保存配置，生成订阅 YAML 并校验代理。它不编排远程机器，也不把 Python CLI 当作常驻代理服务。
+ChatClash 是 ChatArch 的单机代理管理工具：用 Python CLI 管理独立的 Mihomo 引擎（Linux 与 Windows），通过 ChatEnv 保存配置，生成订阅 YAML 并校验代理。它不编排远程机器，也不把 Python CLI 当作常驻代理服务。
 
 [文档站](https://arch.gh.wzhecnu.cn/ChatClash/) · [英文版](README.en.md) · [PyPI](https://pypi.org/project/chatclash/) · [问题反馈](https://github.com/ChatArch/ChatClash/issues)
 
@@ -26,7 +26,7 @@ ChatClash 是 ChatArch 的单机代理管理工具：用 Python CLI 管理独立
 
 ChatClash 与 ChatEnv 必须装在同一解释器中。旧应用的 `chatstyle<0.2` 约束可能与必需的 ChatStyle 0.2 冲突；定向升级兼容包或隔离旧环境，不要降级 ChatStyle 或用 `--no-deps`。
 
-下面假设该环境的 `bin` 已加入 `PATH`，目标是 Linux 用户级 systemd 部署。**新安装的 HTTP/SOCKS 代理只绑定 loopback；若改为 LAN/非 loopback 监听，ChatClash 会要求已配置代理认证。生成的 controller 仍只绑定 `127.0.0.1:9090`，但没有 secret；代理认证也不能保护它。旧配置可能仍使用 `:9090` 或其他外部绑定，升级后刷新生成配置并限制可信管理入口。**
+下面假设该环境的 `bin`（Windows 为 `Scripts`）已加入 `PATH`。Linux 使用用户级 systemd；Windows 用当前用户下的受控 Mihomo 进程，不要求管理员权限。**新安装的 HTTP/SOCKS 代理只绑定 loopback；若改为 LAN/非 loopback 监听，ChatClash 会要求已配置代理认证。生成的 controller 仍只绑定 `127.0.0.1:9090`，但没有 secret；代理认证也不能保护它。旧配置可能仍使用 `:9090` 或其他外部绑定，升级后刷新生成配置并限制可信管理入口。**
 
 ```bash
 chatclash init -i
@@ -39,6 +39,22 @@ chatenv test -t chatclash
 ```
 
 `init` 不是已有部署的升级命令；`install --daemon` 不启动服务。`chatenv test` 会联网测试代理。需要转换器时先看[对应流程](docs/operations.md#converter)。
+
+### Windows 首次运行
+
+在 PowerShell 中使用同一 ChatArch 环境安装，`mihomo install` 会选择 Windows x64 或 arm64 ZIP 资产并校验发布元数据提供的 SHA-256（如有）。Windows 不需要也不会安装 systemd unit：
+
+```powershell
+chatclash init -i
+chatclash mihomo install -I
+chatclash sub update -I
+chatclash proxy validate -I
+chatclash mihomo start -I
+chatclash proxy system show -I
+chatclash proxy system enable -I
+```
+
+只有 `mihomo status` 显示运行且 `proxy system show` 的 `ready: yes` 时，`proxy system enable` 才会写当前用户的 Windows 手动代理，并先备份原值及 WinINet 的有效连接模式；完成后用 `chatclash proxy system disable -I` 恢复。临时 PowerShell 会话用 `chatclash proxy env --shell powershell -I`；长期用户环境变量须显式 `--persist --no-mask`，并用 `--restore` 恢复。详见[运行与维护](docs/operations.md#windows)。
 
 ## 哪一层发生变化？
 
@@ -74,9 +90,13 @@ chatclash
 │   ├── uninstall [--dry-run] [--daemon] [--interactive]  # Uninstall the local Mihomo binary.
 │   └── update [--repo REPO] [--version VERSION] [--dry-run] [--interactive]  # Update the local Mihomo binary.
 ├── proxy [--interactive]  # Show and update local proxy endpoint settings.
-│   ├── env [--no-mask] [--interactive]  # Print shell proxy environment exports.
+│   ├── env [--no-mask] [--shell SHELL-NAME] [--persist] [--restore] [--dry-run] [--interactive]  # Print shell proxy environment exports.
 │   ├── set [--http-port HTTP-PORT-VALUE] [--socks-port SOCKS-PORT-VALUE] [--controller-port CONTROLLER-PORT-VALUE] [--bind-host BIND-HOST] [--proxy-host PROXY-HOST-VALUE] [--dry-run] [--yes] [--interactive]  # Update local proxy listener settings and re-render active config.
 │   ├── show [--no-mask] [--interactive]  # Show proxy endpoints for this machine.
+│   ├── system [--interactive]  # Manage the Windows current-user system proxy with backup and restore.
+│   │   ├── disable [--dry-run] [--interactive]  # Restore the Windows current-user proxy settings saved at enable time.
+│   │   ├── enable [--dry-run] [--interactive]  # Enable Windows proxy for the ready local loopback HTTP listener.
+│   │   └── show [--interactive]  # Show Windows current-user proxy status without changing it.
 │   └── validate [--dry-run] [--interactive]  # Validate the current active Mihomo config.
 ├── status [--interactive]  # Show this machine's ChatClash status.
 └── sub [--interactive]  # Manage subscription-backed runtime config.

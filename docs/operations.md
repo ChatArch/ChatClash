@@ -18,7 +18,7 @@ ChatClash 是 Python 管理 CLI；Mihomo 是独立二进制。用户级 `chatcla
 
 此处仅说明执行关系，不要在已有服务旁再运行一个引擎。升级 Python 包不会替换或重启它；`mihomo update` 替换磁盘二进制也不会自动重启。修改 ChatEnv、`init` 或 `sub set` 不会自动更新运行中的配置。
 
-`install --daemon` 写入并启用用户级 unit，但不启动。存在该 unit 时，`start`、`stop`、`restart` 使用 `systemctl --user`；没有 unit 时，`start` 直接运行引擎，可能占用前台。当前服务生命周期面向 Linux，不是跨平台服务管理器。
+在 Linux 上，`install --daemon` 写入并启用用户级 unit，但不启动。存在该 unit 时，`start`、`stop`、`restart` 使用 `systemctl --user`；没有 unit 时，`start` 直接运行引擎，可能占用前台。Windows 则在当前用户目录维护受控后台进程、PID 身份和日志：`start` 只有在 HTTP loopback 端口已监听后才成功，`stop` 会校验 PID 对应的可执行文件路径和创建时间，避免误杀复用 PID 的无关进程。
 
 ## 刷新订阅 {#subscription}
 
@@ -66,6 +66,27 @@ chatclash mihomo logs --tail 100 -I
 
 `logs` 在 systemd 模式展示服务状态附带的日志，不等价于完整历史日志查询。必要时在本机使用 `journalctl --user -u chatclash-mihomo.service -n 100 --no-pager`；原始日志必须先审查、脱敏再分享。`status` 显示运行不代表网络可达，`proxy validate` 检查配置，`chatenv test` 则真实请求外部测试站点。
 
+## Windows 当前用户代理 {#windows}
+
+Windows 安装自动选择与当前架构匹配的 Mihomo ZIP（x64/arm64）；不需要管理员权限、Windows 服务、TUN 或机器级代理。先完成配置、校验和引擎启动，再操作系统代理：
+
+```powershell
+chatclash mihomo install -I
+chatclash proxy validate -I
+chatclash mihomo start -I
+chatclash proxy system show -I
+chatclash proxy system enable -I
+chatenv test -t chatclash
+```
+
+`enable` 只会指向已监听的 loopback HTTP 端口，绝不会把 Windows 代理指到未就绪端口。首次启用会把当前用户手动代理及 WinINet 有效连接标志（包括 PAC/WPAD 自动检测）写入私有备份，再通过 WinINet 切换到手动代理并刷新；重复启用保留最初备份。无论中断、启动失败还是网络检查失败，都可执行：
+
+```powershell
+chatclash proxy system disable -I
+```
+
+该命令恢复备份并删除它；若没有备份则不改动现有 Windows 设置。损坏或不完整备份会被拒绝，避免把未知设置误恢复为空值。`proxy system show` 默认脱敏显示当前服务器值，并从 WinINet 有效连接标志说明 PAC/自动发现、备份和端口是否就绪。
+
 ## 安全使用代理环境变量 {#proxy-env}
 
 ```bash
@@ -84,6 +105,14 @@ chatclash proxy env -I
 ```
 
 子 shell 结束后父 shell 的环境不变。不要单独打印未脱敏导出、运行 `env`/`printenv`、开启 `set -x` 或使用 verbose 请求日志；不要把输出重定向到文档/工单。此示例只连接占位测试站点，按需替换为可信测试目标。秘密仍存在于子进程环境中，不能把此模式当作多用户主机上的安全隔离边界。
+
+Windows PowerShell 临时会话使用等价但不持久的输出：
+
+```powershell
+chatclash proxy env --shell powershell -I
+```
+
+复制到当前 PowerShell 后，关闭该窗口即可清除。只有确认应将认证信息保存在当前用户环境变量中时才使用 `--persist --no-mask`；该操作同样要求本地 HTTP 端口已就绪，并先备份已有 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY`。用 `chatclash proxy env --restore -I` 恢复备份。不要在共享 Windows 帐户中持久化带认证的代理 URL。
 
 ## 可选订阅转换器 {#converter}
 

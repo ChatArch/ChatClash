@@ -21,9 +21,13 @@ chatclash
 │   ├── uninstall [--dry-run] [--daemon] [--interactive]  # Uninstall the local Mihomo binary.
 │   └── update [--repo REPO] [--version VERSION] [--dry-run] [--interactive]  # Update the local Mihomo binary.
 ├── proxy [--interactive]  # Show and update local proxy endpoint settings.
-│   ├── env [--no-mask] [--interactive]  # Print shell proxy environment exports.
+│   ├── env [--no-mask] [--shell SHELL-NAME] [--persist] [--restore] [--dry-run] [--interactive]  # Print shell proxy environment exports.
 │   ├── set [--http-port HTTP-PORT-VALUE] [--socks-port SOCKS-PORT-VALUE] [--controller-port CONTROLLER-PORT-VALUE] [--bind-host BIND-HOST] [--proxy-host PROXY-HOST-VALUE] [--dry-run] [--yes] [--interactive]  # Update local proxy listener settings and re-render active config.
 │   ├── show [--no-mask] [--interactive]  # Show proxy endpoints for this machine.
+│   ├── system [--interactive]  # Manage the Windows current-user system proxy with backup and restore.
+│   │   ├── disable [--dry-run] [--interactive]  # Restore the Windows current-user proxy settings saved at enable time.
+│   │   ├── enable [--dry-run] [--interactive]  # Enable Windows proxy for the ready local loopback HTTP listener.
+│   │   └── show [--interactive]  # Show Windows current-user proxy status without changing it.
 │   └── validate [--dry-run] [--interactive]  # Validate the current active Mihomo config.
 ├── status [--interactive]  # Show this machine's ChatClash status.
 └── sub [--interactive]  # Manage subscription-backed runtime config.

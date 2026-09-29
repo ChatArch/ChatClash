@@ -296,6 +296,13 @@ def start_mihomo(*, dry_run: bool = False) -> CommandResult:
             raise RuntimeError(f"mihomo binary does not exist: {engine}")
         if pid_running(pid_file(config)):
             return CommandResult(action="start_mihomo", lines=["already running"])
+        try:
+            with socket.create_connection((proxy_host(config), http_port(config)), timeout=0.1):
+                raise RuntimeError(f"HTTP proxy port is already in use: {proxy_host(config)}:{http_port(config)}")
+        except ConnectionRefusedError:
+            pass
+        except OSError:
+            pass
         runtime_dir.mkdir(parents=True, exist_ok=True)
         log = log_file(config)
         log.parent.mkdir(parents=True, exist_ok=True)

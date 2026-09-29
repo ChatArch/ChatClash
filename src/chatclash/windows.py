@@ -174,15 +174,45 @@ def local_proxy_ready() -> bool:
 
 
 def _require_snapshot(snapshot: dict[str, Any], names: tuple[str, ...], path: Path) -> None:
+    registry = _winreg()
     missing = []
     for name in names:
         value = snapshot.get(name)
         if not isinstance(value, dict) or not isinstance(value.get("present"), bool):
             missing.append(name)
-        elif value["present"] and ("kind" not in value or "value" not in value):
-            missing.append(name)
+        elif value["present"]:
+            kind = value.get("kind")
+            stored = value.get("value")
+            if name == "ProxyEnable":
+                valid = kind == registry.REG_DWORD and isinstance(stored, int)
+            else:
+                valid = kind in {registry.REG_SZ, registry.REG_EXPAND_SZ} and isinstance(stored, str)
+            if not valid:
+                missing.append(name)
     if missing:
         raise RuntimeError(f"backup is incomplete and will not be restored: {path}")
+
+
+def _validate_system_proxy_backup(path: Path) -> None:
+    snapshot = _read_json(path)
+    if snapshot is None:
+        return
+    _require_snapshot(snapshot, ("ProxyEnable", "ProxyServer", "ProxyOverride"), path)
+    if not isinstance(snapshot.get("wininet_flags"), int) or snapshot["wininet_flags"] < 0:
+        raise RuntimeError(f"backup is incomplete and will not be restored: {path}")
+
+
+def _validate_environment_backup(path: Path) -> None:
+    snapshot = _read_json(path)
+    if snapshot is None:
+        return
+    registry = _winreg()
+    for name in PROXY_ENV_NAMES:
+        value = snapshot.get(name)
+        if not isinstance(value, dict) or not isinstance(value.get("present"), bool):
+            raise RuntimeError(f"backup is incomplete and will not be restored: {path}")
+        if value["present"] and (value.get("kind") not in {registry.REG_SZ, registry.REG_EXPAND_SZ} or not isinstance(value.get("value"), str)):
+            raise RuntimeError(f"backup is incomplete and will not be restored: {path}")
 
 
 def get_system_proxy_status() -> dict[str, str]:
@@ -215,6 +245,7 @@ def enable_system_proxy(*, dry_run: bool = False) -> list[str]:
     if dry_run:
         return lines + [f"backup: {backup_path}"]
     registry = _winreg()
+    _validate_system_proxy_backup(backup_path)
     with registry.CreateKeyEx(registry.HKEY_CURRENT_USER, INTERNET_SETTINGS, 0, registry.KEY_READ | registry.KEY_WRITE) as key:
         flags = _wininet_connection_flags()
         if not backup_path.exists():
@@ -236,9 +267,7 @@ def restore_system_proxy(*, dry_run: bool = False) -> list[str]:
     if snapshot is None:
         return ["restored: no backup was present"]
     names = ("ProxyEnable", "ProxyServer", "ProxyOverride")
-    _require_snapshot(snapshot, names, backup_path)
-    if not isinstance(snapshot.get("wininet_flags"), int):
-        raise RuntimeError(f"backup is incomplete and will not be restored: {backup_path}")
+    _validate_system_proxy_backup(backup_path)
     if dry_run:
         return [f"restore: {backup_path}"]
     registry = _winreg()
@@ -281,6 +310,7 @@ def persist_proxy_environment(*, include_auth: bool = True, no_mask: bool = Fals
     if dry_run:
         return ["scope: current user", *[f"set: {name}" for name in values], f"backup: {backup_path}"]
     registry = _winreg()
+    _validate_environment_backup(backup_path)
     with registry.CreateKeyEx(registry.HKEY_CURRENT_USER, USER_ENVIRONMENT, 0, registry.KEY_READ | registry.KEY_WRITE) as key:
         if not backup_path.exists():
             _write_json(backup_path, {name: _registry_value(key, name) for name in PROXY_ENV_NAMES})
@@ -296,7 +326,7 @@ def restore_proxy_environment(*, dry_run: bool = False) -> list[str]:
     snapshot = _read_json(backup_path)
     if snapshot is None:
         return ["restored: no environment backup was present"]
-    _require_snapshot(snapshot, PROXY_ENV_NAMES, backup_path)
+    _validate_environment_backup(backup_path)
     if dry_run:
         return [f"restore: {backup_path}"]
     registry = _winreg()

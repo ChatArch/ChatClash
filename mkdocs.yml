@@ -27,6 +27,7 @@ plugins:
           nav_translations:
             首页: Home
             安装与依赖: Installation
+            Windows 使用指南: Windows Guide
             配置与 ChatEnv: Configuration and ChatEnv
             运行与维护: Operations
             CLI 树: CLI Tree
@@ -52,6 +53,7 @@ markdown_extensions:
 nav:
   - 首页: index.md
   - 安装与依赖: installation.md
+  - Windows 使用指南: windows.md
   - 配置与 ChatEnv: configuration.md
   - 运行与维护: operations.md
   - CLI 树: cli-tree.md

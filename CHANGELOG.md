@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.10 - 2026-09-30
 
 ### Added
 
@@ -8,10 +8,12 @@
 - Add `proxy system show|enable|disable` for backed-up current-user Windows proxy settings, including PAC/auto-detect restoration and WinINet refresh.
 - Add PowerShell proxy environment output plus explicit backed-up current-user environment persistence/restoration.
 - Add Windows CI coverage and Windows-specific CLI/API contracts.
+- Add Chinese and English Windows quick starts with hidden subscription input, connectivity checks, bootstrap downloads, and explicit proxy recovery.
 
 ### Changed
 
 - Keep Linux systemd behavior unchanged while documenting platform-specific lifecycle and recovery procedures.
+- Use the platform null device for connectivity checks and preserve subscription backup bytes on Windows.
 
 ## 0.1.9
 

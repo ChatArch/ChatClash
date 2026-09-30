@@ -9,6 +9,7 @@ ChatClash 是 ChatArch 的单机代理管理工具：用 Python CLI 管理独立
 | 我想做什么 | 从这里开始 |
 | --- | --- |
 | 安装、升级 CLI 或解决依赖冲突 | [安装与依赖](docs/installation.md) |
+| 在 Windows 安装、导入订阅、启用或恢复代理 | [Windows 使用指南](docs/windows.md) |
 | 配置订阅、认证、根目录或切换配置 | [配置与 ChatEnv](docs/configuration.md) |
 | 刷新订阅、重载配置、升级引擎 | [运行与维护](docs/operations.md) |
 | 给单个命令使用带认证的代理 | [安全代理环境变量](docs/operations.md#proxy-env) |
@@ -41,6 +42,8 @@ chatenv test -t chatclash
 `init` 不是已有部署的升级命令；`install --daemon` 不启动服务。`chatenv test` 会联网测试代理。需要转换器时先看[对应流程](docs/operations.md#converter)。
 
 ### Windows 首次运行
+
+完整的 PowerShell 安装、隐藏输入订阅、联网检查和恢复步骤见 [Windows 使用指南](docs/windows.md)。订阅只在交互提示中输入，不要写进命令历史、脚本或 issue。
 
 在 PowerShell 中使用同一 ChatArch 环境安装，`mihomo install` 会选择 Windows x64 或 arm64 ZIP 资产并校验发布元数据提供的 SHA-256（如有）。Windows 不需要也不会安装 systemd unit：
 

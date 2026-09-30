@@ -9,6 +9,7 @@ ChatClash is a single-machine ChatArch proxy toolkit: a Python CLI manages the s
 | Goal | Start here |
 | --- | --- |
 | Install/upgrade the CLI or resolve dependency conflicts | [Installation and Dependencies](docs/installation.en.md) |
+| Install, import a subscription, enable or restore Windows proxy | [Windows Guide](docs/windows.en.md) |
 | Set subscription, authentication, home, or profiles | [Configuration and ChatEnv](docs/configuration.en.md) |
 | Refresh subscriptions, reload configuration, upgrade the engine | [Operations](docs/operations.en.md) |
 | Use an authenticated proxy for one command | [Safe proxy exports](docs/operations.en.md#proxy-env) |
@@ -41,6 +42,8 @@ chatenv test -t chatclash
 `init` is not an existing deployment's upgrade command. `install --daemon` does not start the service. `chatenv test` performs online proxy checks. See the [converter procedure](docs/operations.en.md#converter) when needed.
 
 ### First run on Windows
+
+See the [Windows Guide](docs/windows.en.md) for PowerShell installation, hidden subscription input, online checks, and recovery. Enter subscriptions only at the interactive prompt, not in command history, scripts, or issues.
 
 In PowerShell, install into the same ChatArch environment. `mihomo install` selects the Windows x64/arm64 ZIP asset and verifies a release-provided SHA-256 digest when one is available. Windows neither needs nor installs a systemd unit:
 

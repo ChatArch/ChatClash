@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import shlex
+import os
 import threading
 import urllib.parse
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import yaml
+import pytest
 from click.testing import CliRunner
 
 from chatclash.cli import main
@@ -67,7 +69,7 @@ def test_cli_tree_is_concise_and_old_commands_removed():
 
     expected_groups = {
         "sub": {"set", "status", "update", "url", "generate", "converter"},
-        "proxy": {"show", "env", "set", "validate"},
+        "proxy": {"show", "env", "set", "system", "validate"},
         "mihomo": {"install", "uninstall", "update", "start", "stop", "restart", "reload", "status", "logs"},
     }
     for group, commands in expected_groups.items():
@@ -474,11 +476,13 @@ def test_sub_generate_writes_config_and_backup(tmp_path, monkeypatch):
     assert parsed["socks-port"] == 7891
     assert parsed["external-controller"] == "127.0.0.1:9090"
     assert parsed["proxies"][0]["name"] == "direct-node"
-    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(output.stat().st_mode) == 0o600
     backups = list((tmp_path / "backups").glob("config.yaml.*.bak"))
     assert backups
     for backup in backups:
-        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+        if os.name != "nt":
+            assert stat.S_IMODE(backup.stat().st_mode) == 0o600
     assert _SubconverterHandler.seen_path.startswith("/sub?")
 
 
@@ -734,9 +738,11 @@ def test_sub_converter_install_extracts_tar_gz_source(tmp_path, monkeypatch):
     target = home / "bin" / "subconverter"
     assert target.exists()
     assert target.read_text(encoding="utf-8").startswith("#!/bin/sh")
-    assert target.stat().st_mode & 0o111
+    if os.name != "nt":
+        assert target.stat().st_mode & 0o111
 
 
+@pytest.mark.skipif(os.name == "nt", reason="fixture is a POSIX shell script, not a Windows converter executable")
 def test_sub_converter_install_source_start_status_stop_with_fake_binary(tmp_path, monkeypatch):
     _clean_env(monkeypatch, tmp_path)
     home = tmp_path / "chatclash-home"
@@ -751,7 +757,8 @@ def test_sub_converter_install_source_start_status_stop_with_fake_binary(tmp_pat
     assert install.exit_code == 0, install.output
     target = home / "bin" / "subconverter"
     assert target.exists()
-    assert target.stat().st_mode & 0o111
+    if os.name != "nt":
+        assert target.stat().st_mode & 0o111
 
     start = runner.invoke(main, ["sub", "converter", "start", "--host", "127.0.0.1", "--port", "26666", "-I"])
     assert start.exit_code == 0, start.output
@@ -781,7 +788,7 @@ def test_mihomo_dry_run_paths(tmp_path, monkeypatch):
     install = runner.invoke(main, ["mihomo", "install", "--daemon", "--dry-run"])
     assert install.exit_code == 0, install.output
     assert str(home / "bin" / "mihomo") in install.output
-    assert "daemon: install" in install.output
+    assert ("daemon: Windows uses per-user process management" if os.name == "nt" else "daemon: install") in install.output
     for command in ("start", "stop", "restart", "logs"):
         result = runner.invoke(main, ["mihomo", command, "--dry-run"])
         assert result.exit_code == 0, result.output
@@ -832,7 +839,7 @@ def test_all_public_commands_expose_shared_interactive_option():
 def test_top_level_version_works():
     result = CliRunner().invoke(main, ["--version"])
     assert result.exit_code == 0
-    assert "0.1.9" in result.output
+    assert "0.1.10" in result.output
 
 
 def test_top_level_help_mentions_shared_tree_options():
@@ -916,11 +923,13 @@ def test_secret_bearing_runtime_config_and_backups_are_private(tmp_path, monkeyp
         thread.join(timeout=5)
 
     config_path = home / "clash" / "config.yaml"
-    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
+    if os.name != "nt":
+        assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
     backups = list((home / "clash" / "backups").glob("config.yaml.*.bak"))
     assert backups
     for backup in backups:
-        assert stat.S_IMODE(backup.stat().st_mode) == 0o600
+        if os.name != "nt":
+            assert stat.S_IMODE(backup.stat().st_mode) == 0o600
 
 
 def test_sub_url_non_interactive_missing_values_fails_cleanly(tmp_path, monkeypatch):

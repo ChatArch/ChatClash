@@ -476,15 +476,90 @@ def proxy_show(no_mask: bool, interactive: bool | None) -> None:
 
 @proxy_group.command(name="env")
 @click.option("--no-mask", is_flag=True, help="Output usable proxy URLs with configured auth in plain text.")
+@click.option("--shell", "shell_name", type=click.Choice(["posix", "powershell"]), default="posix", show_default=True, help="Format temporary session variables for this shell.")
+@click.option("--persist", is_flag=True, help="Persist proxy variables for the current Windows user after checking the local proxy is ready.")
+@click.option("--restore", "restore_persisted", is_flag=True, help="Restore previously backed-up current-user proxy variables on Windows.")
+@click.option("--dry-run", is_flag=True)
 @add_interactive_option
-def proxy_env(no_mask: bool, interactive: bool | None) -> None:
+def proxy_env(no_mask: bool, shell_name: str, persist: bool, restore_persisted: bool, dry_run: bool, interactive: bool | None) -> None:
     """Print shell proxy environment exports."""
+    try:
+        _resolve_no_input_interactive(interactive)
+        if persist and restore_persisted:
+            raise ValueError("choose either --persist or --restore")
+        if persist or restore_persisted:
+            from .windows import persist_proxy_environment, restore_proxy_environment
+
+            lines = restore_proxy_environment(dry_run=dry_run) if restore_persisted else persist_proxy_environment(no_mask=no_mask, dry_run=dry_run)
+            _echo_lines(lines)
+        if shell_name == "powershell":
+            from .windows import powershell_proxy_commands
+
+            if not restore_persisted:
+                _echo_lines(powershell_proxy_commands(include_auth=True, no_mask=no_mask))
+        elif not restore_persisted:
+            auth = proxy_auth_status(no_mask=no_mask)
+            if auth.present and not no_mask:
+                click.echo("# auth is configured; run `chatclash proxy env --no-mask` to output usable authenticated proxy URLs")
+            for key, value in get_proxy_env(include_auth=True, no_mask=no_mask).items():
+                click.echo(f"export {key}={shlex.quote(value)}")
+    except Exception as exc:
+        _fail(exc)
+    if dry_run:
+        render_success("dry-run only; no variables changed")
+
+
+@proxy_group.group(name="system")
+@add_interactive_option
+def proxy_system_group(interactive: bool | None) -> None:
+    """Manage the Windows current-user system proxy with backup and restore."""
     _resolve_no_input_interactive(interactive)
-    auth = proxy_auth_status(no_mask=no_mask)
-    if auth.present and not no_mask:
-        click.echo("# auth is configured; run `chatclash proxy env --no-mask` to output usable authenticated proxy URLs")
-    for key, value in get_proxy_env(include_auth=True, no_mask=no_mask).items():
-        click.echo(f"export {key}={shlex.quote(value)}")
+
+
+@proxy_system_group.command(name="show")
+@add_interactive_option
+def proxy_system_show(interactive: bool | None) -> None:
+    """Show Windows current-user proxy status without changing it."""
+    try:
+        _resolve_no_input_interactive(interactive)
+        from .windows import get_system_proxy_status
+
+        for key, value in get_system_proxy_status().items():
+            click.echo(f"{key}: {value}")
+    except Exception as exc:
+        _fail(exc)
+
+
+@proxy_system_group.command(name="enable")
+@click.option("--dry-run", is_flag=True)
+@add_interactive_option
+def proxy_system_enable(dry_run: bool, interactive: bool | None) -> None:
+    """Enable Windows proxy for the ready local loopback HTTP listener."""
+    try:
+        _resolve_no_input_interactive(interactive)
+        from .windows import enable_system_proxy
+
+        _echo_lines(enable_system_proxy(dry_run=dry_run))
+    except Exception as exc:
+        _fail(exc)
+    if dry_run:
+        render_success("dry-run only; Windows settings unchanged")
+
+
+@proxy_system_group.command(name="disable")
+@click.option("--dry-run", is_flag=True)
+@add_interactive_option
+def proxy_system_disable(dry_run: bool, interactive: bool | None) -> None:
+    """Restore the Windows current-user proxy settings saved at enable time."""
+    try:
+        _resolve_no_input_interactive(interactive)
+        from .windows import restore_system_proxy
+
+        _echo_lines(restore_system_proxy(dry_run=dry_run))
+    except Exception as exc:
+        _fail(exc)
+    if dry_run:
+        render_success("dry-run only; Windows settings unchanged")
 
 
 @proxy_group.command(name="set")

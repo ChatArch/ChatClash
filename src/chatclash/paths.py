@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import platform
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,7 @@ def default_local_config(*, home: Path | None = None) -> dict[str, Any]:
         "home": str(root),
         "clash_dir": str(clash_dir),
         "fetch_mode": DEFAULT_FETCH_MODE,
-        "engine_path": str(root / "bin" / "mihomo"),
+        "engine_path": str(root / "bin" / ("mihomo.exe" if platform.system().lower() == "windows" else "mihomo")),
         "pid_file": str(root / "run" / "mihomo.pid"),
         "log_file": str(root / "logs" / "mihomo.log"),
         "http_port": DEFAULT_HTTP_PORT,

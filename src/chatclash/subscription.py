@@ -249,7 +249,8 @@ def _backup(path: Path) -> Path | None:
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     target = backup_dir / f"{path.name}.{stamp}.bak"
-    target.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    # Preserve bytes exactly; Windows text mode otherwise rewrites LF backups to CRLF.
+    target.write_bytes(path.read_bytes())
     target.chmod(0o600)
     return target
 

@@ -1,6 +1,6 @@
 # ChatClash
 
-ChatClash is a single-machine ChatArch proxy toolkit: a Python CLI manages the separate Linux Mihomo engine, stores operator configuration through ChatEnv, generates subscription YAML, and validates the proxy. It neither orchestrates remote hosts nor runs the proxy as a persistent Python service.
+ChatClash is a single-machine ChatArch proxy toolkit: a Python CLI manages the separate Mihomo engine on Linux and Windows, stores operator configuration through ChatEnv, generates subscription YAML, and validates the proxy. It neither orchestrates remote hosts nor runs the proxy as a persistent Python service.
 
 [Documentation](https://arch.gh.wzhecnu.cn/ChatClash/en/) · [Chinese edition](README.md) · [PyPI](https://pypi.org/project/chatclash/) · [Issues](https://github.com/ChatArch/ChatClash/issues)
 
@@ -9,6 +9,7 @@ ChatClash is a single-machine ChatArch proxy toolkit: a Python CLI manages the s
 | Goal | Start here |
 | --- | --- |
 | Install/upgrade the CLI or resolve dependency conflicts | [Installation and Dependencies](docs/installation.en.md) |
+| Install, import a subscription, enable or restore Windows proxy | [Windows Guide](docs/windows.en.md) |
 | Set subscription, authentication, home, or profiles | [Configuration and ChatEnv](docs/configuration.en.md) |
 | Refresh subscriptions, reload configuration, upgrade the engine | [Operations](docs/operations.en.md) |
 | Use an authenticated proxy for one command | [Safe proxy exports](docs/operations.en.md#proxy-env) |
@@ -26,7 +27,7 @@ Complete standard `chatuv setup` first. Use the same virtual environment's inter
 
 ChatClash and ChatEnv must share an interpreter. Legacy applications requiring `chatstyle<0.2` can conflict with the required ChatStyle 0.2 series. Upgrade compatible packages selectively or isolate legacy environments; do not downgrade ChatStyle or use `--no-deps`.
 
-The following assumes that environment's `bin` is on `PATH` and targets Linux user-level systemd. **New HTTP/SOCKS installations bind only to loopback; changing to a LAN/non-loopback listener requires configured proxy authentication. Generated configuration still binds the controller only to `127.0.0.1:9090`, but it has no secret and proxy authentication does not protect it. Older configuration can still use `:9090` or another external bind: refresh generated configuration after upgrading and restrict management access.**
+The following assumes that environment's `bin` (or `Scripts` on Windows) is on `PATH`. Linux uses user-level systemd; Windows uses a managed process for the current user and needs no elevation. **New HTTP/SOCKS installations bind only to loopback; changing to a LAN/non-loopback listener requires configured proxy authentication. Generated configuration still binds the controller only to `127.0.0.1:9090`, but it has no secret and proxy authentication does not protect it. Older configuration can still use `:9090` or another external bind: refresh generated configuration after upgrading and restrict management access.**
 
 ```bash
 chatclash init -i
@@ -39,6 +40,24 @@ chatenv test -t chatclash
 ```
 
 `init` is not an existing deployment's upgrade command. `install --daemon` does not start the service. `chatenv test` performs online proxy checks. See the [converter procedure](docs/operations.en.md#converter) when needed.
+
+### First run on Windows
+
+See the [Windows Guide](docs/windows.en.md) for PowerShell installation, hidden subscription input, online checks, and recovery. Enter subscriptions only at the interactive prompt, not in command history, scripts, or issues.
+
+In PowerShell, install into the same ChatArch environment. `mihomo install` selects the Windows x64/arm64 ZIP asset and verifies a release-provided SHA-256 digest when one is available. Windows neither needs nor installs a systemd unit:
+
+```powershell
+chatclash init -i
+chatclash mihomo install -I
+chatclash sub update -I
+chatclash proxy validate -I
+chatclash mihomo start -I
+chatclash proxy system show -I
+chatclash proxy system enable -I
+```
+
+`proxy system enable` writes the current-user Windows manual proxy only after `mihomo status` is running and `proxy system show` reports `ready: yes`, and backs up its prior values plus the effective WinINet connection mode for `chatclash proxy system disable -I`. For a temporary session use `chatclash proxy env --shell powershell -I`; persistent user variables require explicit `--persist --no-mask` and can be restored with `--restore`. See [Operations](docs/operations.en.md#windows).
 
 ## Which layer changes?
 
@@ -77,6 +96,10 @@ chatclash
 │   ├── env  # Print shell proxy environment exports.
 │   ├── set  # Update local proxy listener settings and re-render active config.
 │   ├── show  # Show proxy endpoints for this machine.
+│   ├── system  # Manage the Windows current-user system proxy with backup and restore.
+│   │   ├── disable  # Restore the Windows current-user proxy settings saved at enable time.
+│   │   ├── enable  # Enable Windows proxy for the ready local loopback HTTP listener.
+│   │   └── show  # Show Windows current-user proxy status without changing it.
 │   └── validate  # Validate the current active Mihomo config.
 ├── status  # Show this machine's ChatClash status.
 └── sub  # Manage subscription-backed runtime config.
